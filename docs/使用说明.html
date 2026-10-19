@@ -1,0 +1,1547 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>汲流 · 使用说明</title>
+<style>
+  :root{
+    --bg:#14110f; --bg2:#1b1815; --card:#201c18; --card2:#262119;
+    --line:#332c25; --line2:#443a30;
+    --ink:#e9e3d9; --ink2:#b3a99c; --ink3:#84796c;
+    --zhu:#c4553b;        /* 朱砂 */
+    --qing:#5f93a3;       /* 石青 */
+    --huang:#c9a227;      /* 藤黄 */
+    --lv:#6f9d5a;         /* 石绿 */
+    --zi:#8d7bb0;
+    --mono:"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.85 "PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--qing); text-decoration:none}
+  a:hover{text-decoration:underline}
+  code,kbd{font-family:var(--mono); font-size:.88em}
+  code{background:#2a241d; color:#e2cfa8; padding:1px 6px; border-radius:4px; border:1px solid #3a3229}
+  kbd{background:#302920; border:1px solid #4a4033; border-bottom-width:2px;
+      border-radius:4px; padding:1px 6px; color:var(--ink)}
+
+  .wrap{max-width:920px; margin:0 auto; padding:0 26px 100px}
+
+  /* ---------- 头部 ---------- */
+  header.hero{
+    position:relative; padding:76px 26px 60px; text-align:center;
+    border-bottom:1px solid var(--line);
+    background:
+      radial-gradient(ellipse 900px 320px at 50% -40px, rgba(196,85,59,.13), transparent 70%),
+      radial-gradient(ellipse 520px 260px at 82% 20%, rgba(95,147,163,.09), transparent 70%);
+  }
+  header.hero h1{
+    margin:0; font-size:62px; font-weight:800; letter-spacing:.26em;
+    text-indent:.26em; color:var(--ink);
+    text-shadow:0 0 44px rgba(196,85,59,.35), 0 0 90px rgba(196,85,59,.13);
+  }
+  header.hero .tl{color:var(--ink2); font-size:15px; letter-spacing:.16em; margin:16px 0 0}
+  header.hero .meta{
+    margin-top:24px; display:inline-flex; gap:9px; flex-wrap:wrap; justify-content:center;
+  }
+  .pill{
+    font:12px/1 var(--mono); letter-spacing:.06em; padding:6px 12px; border-radius:999px;
+    border:1px solid var(--line2); color:var(--ink2); background:rgba(255,255,255,.02);
+  }
+  .pill.z{border-color:rgba(196,85,59,.5); color:#dd8f77}
+  .pill.q{border-color:rgba(95,147,163,.5); color:#8bbccb}
+
+  /* ---------- 目录 ---------- */
+  nav.toc{
+    max-width:920px; margin:34px auto 0; padding:20px 26px;
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(178px,1fr)); gap:9px;
+  }
+  nav.toc a{
+    display:block; padding:11px 15px; border:1px solid var(--line); border-radius:9px;
+    background:var(--card); color:var(--ink2); font-size:13.5px; transition:.16s;
+  }
+  nav.toc a:hover{
+    border-color:var(--line2); color:var(--ink); background:var(--card2);
+    text-decoration:none; transform:translateX(3px);
+  }
+  nav.toc a i{color:var(--zhu); font-style:normal; font-family:var(--mono); margin-right:9px; font-size:12px}
+
+  /* ---------- 章节 ---------- */
+  section{margin-top:64px; scroll-margin-top:22px}
+  h2{
+    font-size:25px; margin:0 0 8px; font-weight:700; letter-spacing:.05em;
+    display:flex; align-items:center; gap:13px;
+  }
+  h2::before{
+    content:""; width:4px; height:23px; border-radius:2px;
+    background:linear-gradient(180deg,var(--zhu),rgba(196,85,59,.15));
+  }
+  h3{font-size:17px; margin:34px 0 10px; font-weight:700; color:#f0eae1; letter-spacing:.03em}
+  h4{font-size:14.5px; margin:22px 0 8px; font-weight:700; color:var(--ink2); letter-spacing:.04em}
+  section>.lead{color:var(--ink2); margin:0 0 6px; font-size:14.5px}
+  p{margin:12px 0}
+  ul,ol{margin:12px 0; padding-left:22px}
+  li{margin:7px 0}
+  li::marker{color:var(--ink3)}
+  strong{color:#f5efe6; font-weight:700}
+  em{color:var(--huang); font-style:normal}
+
+  /* ---------- 卡片 ---------- */
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:11px;
+    padding:20px 22px; margin:18px 0;
+  }
+  .card.warn{border-left:3px solid var(--huang); background:#231d13}
+  .card.danger{border-left:3px solid var(--zhu); background:#241816}
+  .card.ok{border-left:3px solid var(--lv); background:#181f16}
+  .card.info{border-left:3px solid var(--qing); background:#151e22}
+  .card .t{font-weight:700; margin-bottom:6px; display:block; color:#f5efe6}
+  .card.warn .t{color:var(--huang)}
+  .card.danger .t{color:#dd8f77}
+  .card.ok .t{color:#95bd80}
+  .card.info .t{color:#8bbccb}
+  .card p:last-child,.card ul:last-child{margin-bottom:0}
+
+  /* ---------- 表格 ---------- */
+  .tw{overflow-x:auto; margin:20px 0; border:1px solid var(--line); border-radius:10px}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:560px}
+  th{
+    text-align:left; padding:12px 15px; background:#221d18; color:var(--ink2);
+    font-weight:700; font-size:12.5px; letter-spacing:.07em; white-space:nowrap;
+    border-bottom:1px solid var(--line);
+  }
+  td{padding:11px 15px; border-bottom:1px solid #2a241d; vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:rgba(255,255,255,.022)}
+  td.c,th.c{text-align:center}
+  .y{color:var(--lv); font-weight:700}
+  .n{color:var(--ink3)}
+  .mono{font-family:var(--mono); font-size:12.5px}
+
+  /* ---------- 代码块 ---------- */
+  pre{
+    background:#191512; border:1px solid var(--line); border-radius:10px;
+    padding:16px 18px; overflow-x:auto; margin:14px 0;
+    font-family:var(--mono); font-size:12.8px; line-height:1.75; color:#cfc6b8;
+  }
+  pre .c{color:var(--ink3)}
+  pre .k{color:var(--zhu)}
+  pre .s{color:#b8c98a}
+  pre .p{color:var(--qing)}
+
+  /* ---------- 图 ---------- */
+  figure{margin:26px 0}
+  figure svg{width:100%; height:auto; display:block;
+    border:1px solid var(--line); border-radius:11px; background:#191512}
+  figcaption{color:var(--ink3); font-size:12.5px; text-align:center; margin-top:10px}
+
+  /* ---------- 步骤 ---------- */
+  .steps{counter-reset:s; margin:20px 0}
+  .step{
+    position:relative; padding:2px 0 2px 46px; margin:0 0 22px;
+    border-left:1px dashed var(--line2); margin-left:15px;
+  }
+  .step:last-child{border-left-color:transparent}
+  .step::before{
+    counter-increment:s; content:counter(s);
+    position:absolute; left:-15px; top:1px; width:30px; height:30px;
+    border-radius:50%; background:var(--card2); border:1px solid var(--line2);
+    color:var(--zhu); font:700 13px/28px var(--mono); text-align:center;
+  }
+  .step .st{font-weight:700; color:#f5efe6; display:block; margin-bottom:3px}
+  .step p{margin:5px 0}
+
+  /* ---------- 分类徽章 ---------- */
+  .badges{display:flex; flex-wrap:wrap; gap:9px; margin:18px 0}
+  .badge{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:9px 15px; border-radius:9px; border:1px solid var(--line);
+    background:var(--card); font-size:13.5px;
+  }
+  .badge b{font-weight:700}
+  .badge .d{width:7px; height:7px; border-radius:50%}
+  .badge small{color:var(--ink3); font-size:11.5px; font-family:var(--mono)}
+
+  /* ---------- 对比 ---------- */
+  .vs{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:20px 0}
+  .vs .box{border:1px solid var(--line); border-radius:10px; padding:16px 18px; background:var(--card)}
+  .vs .box.bad{border-color:#4a2b25}
+  .vs .box.good{border-color:#2f4429}
+  .vs h5{margin:0 0 9px; font-size:13px; letter-spacing:.08em}
+  .vs .bad h5{color:#c4705a}
+  .vs .good h5{color:#8fb478}
+  .vs ul{margin:0; padding-left:19px; font-size:13.5px}
+
+  footer{
+    margin-top:76px; padding-top:26px; border-top:1px solid var(--line);
+    color:var(--ink3); font-size:12.5px; text-align:center; line-height:2;
+  }
+  @media(max-width:640px){
+    header.hero{padding:54px 18px 44px}
+    header.hero h1{font-size:44px; letter-spacing:.18em}
+    .wrap{padding:0 16px 70px}
+    .vs{grid-template-columns:1fr}
+    h2{font-size:21px}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>汲流</h1>
+  <p class="tl">认清是什么 · 用对的方式下 · 浏览器里替你接管</p>
+  <div class="meta">
+    <span class="pill z">v1.0.0</span>
+    <span class="pill">多线程分片</span>
+    <span class="pill">10 类资源识别</span>
+    <span class="pill q">下载接管</span>
+    <span class="pill">yt-dlp 视频解析</span>
+    <span class="pill">aria2 后端</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#quick"><i>01</i>快速开始</a>
+  <a href="#install"><i>02</i>三种装法</a>
+  <a href="#ext"><i>03</i>浏览器插件</a>
+  <a href="#takeover"><i>04</i>下载接管</a>
+  <a href="#detect"><i>05</i>类型识别</a>
+  <a href="#matrix"><i>06</i>分类策略表</a>
+  <a href="#protocol"><i>07</i>统一下载协议</a>
+  <a href="#playlist"><i>08</i>合集下载</a>
+  <a href="#panel"><i>09</i>面板</a>
+  <a href="#cli"><i>10</i>命令行</a>
+  <a href="#tools"><i>11</i>外部工具</a>
+  <a href="#config"><i>12</i>配置</a>
+  <a href="#faq"><i>13</i>常见问题</a>
+</nav>
+
+<div class="wrap">
+
+<!-- ============================================================ -->
+<section id="quick">
+  <h2>快速开始</h2>
+  <p class="lead">最短路径：装好 → 开面板 → 装插件。三步。</p>
+
+  <div class="steps">
+    <div class="step">
+      <span class="st">装汲流</span>
+      <p>双击 <code>jiliu-setup-1.0.0.exe</code> 安装，或者解压便携版后双击
+      <code>jiliu.exe</code>。装完桌面会有快捷方式。</p>
+    </div>
+    <div class="step">
+      <span class="st">开汲流</span>
+      <p>双击 <strong>汲流</strong>。出来的就是一个<strong>正常的窗口</strong> ——
+      有标题栏、有任务栏图标，没有终端黑框、也不开浏览器。</p>
+      <p class="mono" style="color:var(--ink3)">想要老的浏览器面板？用
+      <code>jiliu.exe serve</code>，然后开 <code>http://127.0.0.1:8788</code>。</p>
+    </div>
+    <div class="step">
+      <span class="st">装浏览器插件</span>
+      <p>地址栏进 <code>chrome://extensions</code> → 右上角打开<strong>开发者模式</strong> →
+      点<strong>加载已解压的扩展程序</strong> → 选 <code>extension</code> 文件夹。</p>
+      <p>装完点插件图标，确认 API 地址是 <code>http://127.0.0.1:8788</code>。</p>
+    </div>
+  </div>
+
+  <div class="card ok">
+    <span class="t">这就完了</span>
+    <p>之后浏览器里点任何下载链接，汲流会自己判断值不值得接管。
+    值得就抢过来用多线程下、下完校验；不值得就放行让浏览器自己下。
+    你不会被拦，也不会被烦到。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="install">
+  <h2>三种装法</h2>
+  <p class="lead">看场合挑一个。装错形态也没关系 —— 三者共用同一份配置文件逻辑。</p>
+
+  <h3>一、安装版 <span class="pill" style="margin-left:8px">jiliu-setup-1.0.0.exe</span></h3>
+  <p>双击即装，装到 <code>%LOCALAPPDATA%\Programs\Jiliu\</code>，
+  建开始菜单和桌面快捷方式，写卸载项（控制面板里能正常卸干净）。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:290px">参数</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">（无参数）</td><td>常规安装到默认目录</td></tr>
+      <tr><td class="mono">--target "D:\Tools\Jiliu"</td><td>装到指定目录</td></tr>
+      <tr><td class="mono">--autostart</td><td>开机自启（登录后静默起服务）</td></tr>
+      <tr><td class="mono">--no-shortcuts</td><td>不建任何快捷方式</td></tr>
+      <tr><td class="mono">--quiet</td><td>静默安装，不弹任何提示</td></tr>
+      <tr><td class="mono">--dry-run</td><td><strong>只打印将要做什么，不真动磁盘</strong> —— 想先看看它会干啥就用这个</td></tr>
+      <tr><td class="mono">--uninstall</td><td>卸载</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>二、便携版 <span class="pill" style="margin-left:8px">jiliu-portable-1.0.0.zip</span></h3>
+  <p>解压到任意位置（U 盘也行），双击 <code>jiliu.exe</code>。</p>
+
+  <div class="card info">
+    <span class="t">portable 这个文件是开关</span>
+    <p>包里有个叫 <code>portable</code> 的空文件。<strong>它的存在本身就是便携模式</strong>：
+    配置、任务记录、下载目录全部落在程序目录下的 <code>data/</code> 与 <code>downloads/</code>，
+    不往 <code>%USERPROFILE%</code> 写一个字节。整个文件夹拷走 = 完整搬家。</p>
+    <p>想改用用户目录（<code>~/.jiliu</code>）？删掉这个文件就行。</p>
+  </div>
+
+  <h3>三、源码运行</h3>
+  <p>需要 Python 3.9+。适合想改代码或跑测试的场合。</p>
+<pre><span class="c"># 双击即开（等价于 gui）：桌面窗口</span>
+python jiliu.py
+
+<span class="c"># 只要 Web 面板 + API，不弹窗口</span>
+python jiliu.py serve
+
+<span class="c"># 直接下一个（不开服务）</span>
+python jiliu.py add https://example.com/big.iso
+
+<span class="c"># 跑全部测试，516 项</span>
+python tests/run_all.py</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="window">
+  <h2>桌面窗口</h2>
+  <p class="lead">双击出来的是一个真正的应用窗口，不是「后台起服务 + 开浏览器」。</p>
+
+  <p>以前是起了个后台服务，再让系统浏览器打开面板。现在双击 <code>jiliu.exe</code>
+  出来的是一个<strong>原生窗口</strong>：有标题栏、能最小化最大化、关掉就退出，
+  没有终端窗口闪一下。界面还是同一套 HTML，只是换了个原生壳装着
+  （pywebview + Edge WebView2）。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:240px">命令</th><th>行为</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">jiliu.exe</td><td>开桌面窗口（推荐，双击就是这个）</td></tr>
+      <tr><td class="mono">jiliu.exe gui</td><td>同上，显式写法</td></tr>
+      <tr><td class="mono">jiliu.exe gui --window browser</td><td>用系统浏览器打开</td></tr>
+      <tr><td class="mono">jiliu.exe serve</td><td>只起服务，不弹窗口（给插件/远程用）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>设置 → 界面 里有三种模式：<strong>自动</strong>（能开窗口就开，不行退回浏览器）、
+  <strong>原生窗口</strong>（始终用窗口）、<strong>浏览器</strong>。</p>
+
+  <div class="card info">
+    <span class="t">窗口开不起来会怎样</span>
+    <p>不会静默退出。<strong>GUI 起不来时会恢复控制台并把错误打出来</strong>，
+    你一眼能看到是缺 WebView2 运行时还是别的。也可以直接用
+    <code>--window browser</code> 绕过。</p>
+  </div>
+
+  <div class="card info">
+    <span class="t">端口被占了？</span>
+    <p>不会报错退出。已经开着一个汲流时，新窗口会自动往后顺延端口。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="layout">
+  <h2>分类归档</h2>
+  <p class="lead">选定下载目录后，汲流会在它下面按类型建子文件夹自动归位 ——
+  不让几百个文件全堆在一个目录里。</p>
+
+<pre>&lt;下载目录&gt;/
+├── 视频/          mp4 mkv flv rmvb ts …
+├── 音频/          mp3 flac wav m4a …
+├── 软件/          exe msi dmg apk …
+├── 压缩包/        zip rar 7z tar.gz …
+├── 文档/          pdf docx xlsx epub …
+├── 光盘镜像/      iso img …
+├── 图片/          jpg png webp gif …
+├── 字体/          ttf otf woff2 …
+├── 数据集/        safetensors ckpt …
+├── BT/            磁力 / 种子
+├── 网盘/          网盘直链
+└── （认不出类型的直接放这里）</pre>
+
+  <h3>三个刻意的决定</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:220px">决定</th><th>为什么</th></tr></thead>
+    <tbody>
+      <tr><td><strong>「其他文件」不建子目录</strong></td>
+          <td>认不出来的东西再塞进一个「其他」文件夹，只是把杂物换个地方堆，
+          下次还是找不到。不如让它在根目录显眼。</td></tr>
+      <tr><td><strong>你显式指定目录时不归档</strong></td>
+          <td>手动选目录 = 明确意图，再自作主张套一层是添乱。
+          想让显式目录也归档，设置里开「显式目录也归档」。</td></tr>
+      <tr><td><strong>只接受单个路径片段</strong></td>
+          <td>配置里写 <code>../../Windows</code> 必须被挡掉 ——
+          这类项是本地接口能写进来的，路径穿越是实打实的风险。</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>子目录名在 设置 → 归档 里改，也可以把某一类设成空（那一类就不归档）。
+  B站合集这类「本质还是视频」的分类会归到 <code>视频/</code>，不再单开一层。</p>
+
+<pre><span class="c"># 看当前布局与示例树</span>
+python jiliu.py layout
+
+<span class="c"># 预览某个链接会落到哪个文件夹</span>
+python jiliu.py layout --url "https://example.com/a.zip"</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="engines">
+  <h2>下载引擎</h2>
+  <p class="lead">七个引擎，职责不同，不能互相替代。汲流按链接类型自动择优。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:150px">引擎</th><th style="width:110px">类别</th><th>定位</th></tr></thead>
+    <tbody>
+      <tr><td><strong>自研多线程</strong></td><td>HTTP</td>
+          <td>零依赖。按资源类型定制线程数与分片，支持续传/限速/暂停/哈希校验</td></tr>
+      <tr><td><strong>aria2</strong></td><td>HTTP + P2P</td>
+          <td><strong>磁力/种子/ed2k 的唯一选择</strong>；也能下普通 HTTP</td></tr>
+      <tr><td><strong>curl</strong></td><td>HTTP</td>
+          <td>兼容性最好。自研引擎下不动的服务端，换它常常就过了</td></tr>
+      <tr><td><strong>wget</strong></td><td>HTTP</td>
+          <td>对「服务端中途断流」容忍度最高，会自己重连续传</td></tr>
+      <tr><td><strong>yt-dlp</strong></td><td>视频</td>
+          <td>只有它认识几千个站点的页面结构。不是可选功能</td></tr>
+      <tr><td><strong>ffmpeg</strong></td><td>合流</td>
+          <td>音视频分离下载后必须靠它合并；转码、嵌字幕也靠它</td></tr>
+      <tr><td><strong>N_m3u8DL-RE</strong></td><td>HLS</td>
+          <td>分片加密、多音轨的流比 ffmpeg 更稳。可选加强项</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>择优规则</h3>
+<pre>P2P（磁力/种子/ed2k）  → aria2（别无选择）
+视频页 / m3u8 / mpd     → yt-dlp
+普通 HTTP              → 按「引擎优先级」挑第一个可用的</pre>
+
+  <div class="card ok">
+    <span class="t">失败会自动降级</span>
+    <p>自研引擎偶尔会撞上挑食的服务端，这时候<strong>静默换 curl 重来一遍</strong>，
+    比让你对着一个错误码发呆强。降级链可在设置里关掉。</p>
+  </div>
+
+<pre><span class="c"># 看所有引擎与可用状态</span>
+python jiliu.py engines
+
+<span class="c"># 改优先级</span>
+python jiliu.py config --set engine_order=native,aria2,curl,wget</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="edition">
+  <h2>两个版本：国内版 / 全球版</h2>
+  <p class="lead">两个<strong>独立</strong>的版本，不是同一份程序藏几个按钮。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:200px"></th><th style="width:180px">国内版 <code>cn</code></th><th>全球版 <code>global</code></th></tr></thead>
+    <tbody>
+      <tr><td>国内站点</td><td style="color:var(--lv)">✅</td><td style="color:var(--lv)">✅</td></tr>
+      <tr><td>海外站点（YouTube/TikTok/X…）</td>
+          <td style="color:var(--zhu)">❌ <strong>真拦掉</strong></td>
+          <td style="color:var(--lv)">✅</td></tr>
+      <tr><td>代理设置</td><td>界面上不出现</td><td>✅ 完整</td></tr>
+      <tr><td>BT / 网盘</td><td style="color:var(--lv)">✅</td><td style="color:var(--lv)">✅</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>国内版面对的是「只用国内站」的场景 —— 单位电脑、内网、给家人装的机器。
+  这类环境下把 YouTube、代理这些东西摆在界面上，除了制造困惑没有别的作用
+  （点了必然失败，还要解释为什么失败）。所以国内版是<strong>真的一条都不发</strong>：
+  界面上不出现，逻辑上也拒掉，报错直接说清「本版不含此能力，需要请换全球版」。</p>
+
+  <div class="card info">
+    <span class="t">判「是不是海外站点」刻意保守</span>
+    <p>只有<strong>明确认识</strong>的海外平台才判为海外，白名单之外的域名一律放行。
+    理由是搞错方向的代价不对称 —— 把国内小众站误判成海外，
+    会让你正常能下的东西下不了。</p>
+  </div>
+
+<pre><span class="c"># 看当前版本与两种形态的区别</span>
+python jiliu.py edition
+
+<span class="c"># 切换</span>
+python jiliu.py edition cn
+python jiliu.py edition global</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="proxy">
+  <h2>代理</h2>
+  <p class="lead">下载外网的东西需要代理，但<strong>默认不需要你填任何东西</strong>。</p>
+
+  <p>汲流直接读 Windows 的 Internet 设置（注册表里的系统代理），解析
+  <code>host:port</code> / <code>http=</code> / <code>socks=</code> 各种写法，
+  连「哪些地址不走代理」的例外列表也一起读。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:200px">模式</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><strong>跟随系统</strong>（默认）</td>
+          <td>读系统代理；系统没配就直连。界面会显示当前读到的是什么</td></tr>
+      <tr><td><strong>手动</strong></td>
+          <td>自己填。内置 8 个常见预设，点一下就填好</td></tr>
+      <tr><td><strong>直连</strong></td><td>一律不走代理</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>还有「连不上时自动直连」的兜底开关 —— 代理挂了不至于整个不能用。
+  代理按链接分流：国内站直连、海外站走代理，两种链接混在一个队列里也没问题。</p>
+
+  <div class="card warn">
+    <span class="t">一个踩过的坑</span>
+    <p>本机如果同时存在<strong>环境变量</strong>代理（<code>HTTP_PROXY</code>）和
+    <strong>系统</strong>代理，两边可能只有一个是活的。汲流优先用系统代理并验活，
+    不会闷头走一个已经死掉的环境变量。</p>
+  </div>
+
+<pre><span class="c"># 看当前用的是哪个代理、通不通</span>
+python jiliu.py proxy
+python jiliu.py proxy --test</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="cn-sites">
+  <h2>国内站点可用性（实测）</h2>
+  <p class="lead">真跑出来的结果，不是照抄 yt-dlp 的站点列表。国内 16 站：
+  <strong>7 个开箱可用、3 个只差一份 Cookie、1 个被限流、1 个上游坏了、4 个根本不支持。</strong></p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:130px">站点</th><th style="width:130px">结果</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>哔哩哔哩</td><td style="color:var(--lv)">✅ 可用</td><td>免登录拿 1080P，15 档格式</td></tr>
+      <tr><td>优酷</td><td style="color:var(--lv)">✅ 可用</td><td>免登录 1080P</td></tr>
+      <tr><td>腾讯视频</td><td style="color:var(--lv)">✅ 可解析</td><td>不带登录态通常只给试看片段</td></tr>
+      <tr><td>芒果TV</td><td style="color:var(--lv)">✅ 可用</td><td>要用当前的 <code>/b/&lt;栏目id&gt;/&lt;集id&gt;.html</code>，老链接会 404</td></tr>
+      <tr><td>微博</td><td style="color:var(--lv)">✅ 可用</td><td>免登录</td></tr>
+      <tr><td>AcFun</td><td style="color:var(--lv)">✅ 可用</td><td>免登录，多档画质</td></tr>
+      <tr><td>央视网</td><td style="color:var(--lv)">✅ 可用</td><td>只认 <code>/&lt;年&gt;/&lt;月&gt;/&lt;日&gt;/VIDE….shtml</code> 与 <code>/video/</code></td></tr>
+      <tr><td>搜狐视频</td><td style="color:var(--huang)">⚠️ 限流</td><td>接口回 429，换 IP 或稍后重试</td></tr>
+      <tr><td>西瓜视频</td><td style="color:var(--huang)">⚠️ 需 Cookie</td><td>不必登录，但需要一份有效 Cookie</td></tr>
+      <tr><td>抖音</td><td style="color:var(--huang)">⚠️ 需新鲜 Cookie</td><td>旧的 Cookie 也不行</td></tr>
+      <tr><td>小红书</td><td style="color:var(--huang)">⚠️ 需登录</td><td>必须给<strong>视频</strong>帖链接，图文帖解析不出</td></tr>
+      <tr><td>爱奇艺</td><td style="color:var(--zhu)">❌ 上游失效</td><td>yt-dlp 的 iqiyi 解析器跟不上爱奇艺改版，等上游更新</td></tr>
+      <tr><td>快手</td><td style="color:var(--zhu)">❌ 不支持</td><td>yt-dlp 没有解析器</td></tr>
+      <tr><td>咪咕视频</td><td style="color:var(--zhu)">❌ 不支持</td><td>同上</td></tr>
+      <tr><td>PP视频</td><td style="color:var(--zhu)">❌ 不支持</td><td>同上</td></tr>
+      <tr><td>电影网</td><td style="color:var(--zhu)">❌ 不支持</td><td>无解析器，且对非浏览器 UA 直接 403</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="card info">
+    <span class="t">不支持就是不支持，界面会直说</span>
+    <p>那 4 个 yt-dlp 根本不支持的站，是<strong>能力缺口不是配置问题</strong>。
+    界面上会如实说「本站暂不支持」，而不是让你等一个必然的失败。
+    要支持只能自研接口。</p>
+  </div>
+
+  <p>完整报告（含方法与踩坑记录）见包内
+  <code>国内站点实测报告.html</code>。站点会改版、上游会修，
+  这份表本来就不是一次性的：</p>
+
+<pre><span class="c"># 全量重跑（联网，约 1.5 分钟）</span>
+python build/_test_cn_sites.py
+
+<span class="c"># 只看离线判定，秒出</span>
+python build/_test_cn_sites.py --offline
+
+<span class="c"># 看代码里登记的站点现状</span>
+python jiliu.py sites</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="ext">
+  <h2>浏览器插件</h2>
+  <p class="lead">Chrome / Edge / 其他 Chromium 内核。MV3，要求 Chrome 111 以上。</p>
+
+  <h3>加载</h3>
+  <ol>
+    <li>地址栏输入 <code>chrome://extensions</code></li>
+    <li>右上角打开<strong>开发者模式</strong></li>
+    <li>点<strong>加载已解压的扩展程序</strong>，选 <code>extension</code> 文件夹</li>
+    <li>点插件图标 → 检查 API 地址是 <code>http://127.0.0.1:8788</code></li>
+  </ol>
+
+  <div class="card warn">
+    <span class="t">几种失效情形</span>
+    <ul>
+      <li><strong>知会权限没给</strong> —— 插件要 <code>downloads</code> 权限才能接管下载。第一次装会被问，选「允许」。</li>
+      <li><strong>汲流没在跑</strong> —— 插件会提示连不上。先双击汲流把面板开起来。</li>
+      <li><strong>端口改了</strong> —— 面板里把 API 地址改成新端口，插件会自动跟着变。</li>
+    </ul>
+  </div>
+
+  <h3>两个功能</h3>
+  <p><strong>一、下载接管</strong> —— 见下一节，这是主菜。</p>
+  <p><strong>二、页面嗅探</strong> —— 插件会钩页面里的 <code>&lt;video&gt;</code> /
+  <code>&lt;audio&gt;</code> 标签，以及 <code>fetch</code> / <code>XMLHttpRequest</code> 请求，
+  把真实的媒体地址捞出来。点插件图标，列表里点「交给汲流」。</p>
+
+  <div class="card">
+    <span class="t">为什么嗅探要跑在页面主世界</span>
+    <p>MV3 的 <code>content script</code> 默认跑在隔离世界（isolated world）里。
+    隔离世界有独立的 JS 环境 —— 你在这里改写 <code>window.fetch</code>，
+    页面自己调用的那个 <code>fetch</code> <strong>完全不受影响</strong>。</p>
+    <p>所以要加 <code>"world": "MAIN"</code>。<code>inject.js</code> 就是这么配的。
+    钩子在主世界捞到地址，再用 <code>postMessage</code> 传给隔离世界的
+    <code>content.js</code> —— 两个世界之间只有这一条通道。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="takeover">
+  <h2>下载接管</h2>
+  <p class="lead">插件监听浏览器的每一次下载，先暂停、再判断、然后决定放行还是接管。</p>
+
+  <h3>为什么必须先暂停</h3>
+  <div class="card danger">
+    <span class="t">顺序错了就白费流量</span>
+    <p><code>chrome.downloads.onCreated</code> 触发的时候，
+    下载<strong>已经在跑了</strong>。这时候你慢悠悠地发一个 HTTP 请求去问汲流
+    「这个要不要接管」，等你收到答复，几百 KB 可能已经下来了 —— 然后你
+    <code>cancel()</code> 掉，汲流从头再下一遍。流量白流，进度白费。</p>
+    <p>所以顺序是：<strong>先 <code>pause()</code>，再判断</strong>。
+    决定放行就 <code>resume()</code>，决定接管才 <code>cancel()</code>。</p>
+  </div>
+
+  <div class="card ok">
+    <span class="t">接管失败一定救回来</span>
+    <p>任何一步出异常（汲流没响应、网络抖、API 报错），都会走
+    <code>chrome.downloads.resume()</code> 把下载还给浏览器。</p>
+    <p><strong>绝不允许出现「下载卡在暂停状态、无声无息」</strong> ——
+    那比不装插件还糟。</p>
+  </div>
+
+  <h3>三种模式</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:130px">模式</th><th>行为</th><th style="width:210px">什么场合用</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>off</code></td>
+        <td>完全不管，浏览器自己下</td>
+        <td>调试插件、或临时不想被打扰</td>
+      </tr>
+      <tr>
+        <td><code>smart</code> <span class="pill z">默认</span></td>
+        <td>按下面的规则挑着接管</td>
+        <td>日常</td>
+      </tr>
+      <tr>
+        <td><code>all</code></td>
+        <td>所有 HTTP 下载全交给汲流</td>
+        <td>我就想要所有下载都走汲流</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p>模式在插件弹窗里切换，<strong>改完立刻生效</strong>，不用重启浏览器。</p>
+
+  <h3>smart 模式的判定链</h3>
+
+  <figure>
+  <svg viewBox="0 0 680 430" xmlns="http://www.w3.org/2000/svg" font-family="PingFang SC,Microsoft YaHei,sans-serif">
+    <defs>
+      <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 z" fill="#5a4c3e"/>
+      </marker>
+      <marker id="ahz" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 z" fill="#c4553b"/>
+      </marker>
+      <marker id="ahq" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 z" fill="#5f93a3"/>
+      </marker>
+    </defs>
+
+    <!-- 起点 -->
+    <rect x="16" y="12" width="234" height="36" rx="8" fill="#2a2018" stroke="#4a3a2c"/>
+    <text x="133" y="35" font-size="12.5" fill="#e0d5c2" text-anchor="middle">浏览器发起一次下载</text>
+    <path d="M133 48 L133 62" stroke="#5a4c3e" stroke-width="1.4" marker-end="url(#ah)"/>
+
+    <rect x="16" y="62" width="234" height="34" rx="8" fill="#3a241d" stroke="#c4553b"/>
+    <text x="133" y="84" font-size="12.5" fill="#e5a893" text-anchor="middle">立刻 pause() · 抢在流量之前</text>
+    <path d="M133 96 L133 110" stroke="#5a4c3e" stroke-width="1.4" marker-end="url(#ah)"/>
+
+    <!-- 判定节点 -->
+    <g font-size="12">
+      <!-- 1 -->
+      <rect x="16" y="110" width="234" height="38" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="133" y="134" fill="#cec4b6" text-anchor="middle">接管模式 = off ？</text>
+      <path d="M250 129 L292 129" stroke="#5f93a3" stroke-width="1.3" marker-end="url(#ahq)"/>
+      <rect x="296" y="114" width="88" height="30" rx="7" fill="#17232a" stroke="#5f93a3"/>
+      <text x="340" y="133" fill="#8bbccb" text-anchor="middle">放行 → resume</text>
+      <text x="398" y="133" fill="#6d6255" font-size="11">插件被显式关掉时</text>
+
+      <!-- 2 -->
+      <rect x="16" y="158" width="234" height="38" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="133" y="182" fill="#cec4b6" text-anchor="middle">非 http(s) 协议 ？</text>
+      <path d="M250 177 L292 177" stroke="#5f93a3" stroke-width="1.3" marker-end="url(#ahq)"/>
+      <rect x="296" y="162" width="88" height="30" rx="7" fill="#17232a" stroke="#5f93a3"/>
+      <text x="340" y="181" fill="#8bbccb" text-anchor="middle">放行 → resume</text>
+      <text x="398" y="181" fill="#6d6255" font-size="11">blob: / data: / chrome:</text>
+
+      <!-- 3 -->
+      <rect x="16" y="206" width="234" height="38" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="133" y="230" fill="#cec4b6" text-anchor="middle">黑名单域名 / skipHosts ？</text>
+      <path d="M250 225 L292 225" stroke="#5f93a3" stroke-width="1.3" marker-end="url(#ahq)"/>
+      <rect x="296" y="210" width="88" height="30" rx="7" fill="#17232a" stroke="#5f93a3"/>
+      <text x="340" y="229" fill="#8bbccb" text-anchor="middle">放行 → resume</text>
+      <text x="398" y="229" fill="#6d6255" font-size="11">浏览器自更新等</text>
+
+      <!-- 4 -->
+      <rect x="16" y="254" width="234" height="38" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="133" y="278" fill="#cec4b6" text-anchor="middle">&lt; 1 MiB 的图片 / 字体 ？</text>
+      <path d="M250 273 L292 273" stroke="#5f93a3" stroke-width="1.3" marker-end="url(#ahq)"/>
+      <rect x="296" y="258" width="88" height="30" rx="7" fill="#17232a" stroke="#5f93a3"/>
+      <text x="340" y="277" fill="#8bbccb" text-anchor="middle">放行 → resume</text>
+      <text x="398" y="277" fill="#6d6255" font-size="11">接管反而更慢</text>
+
+      <!-- 5 -->
+      <rect x="16" y="302" width="234" height="38" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="133" y="326" fill="#cec4b6" text-anchor="middle">&gt; 8 MiB 且类型不明 ？</text>
+      <path d="M250 321 L292 321" stroke="#c4553b" stroke-width="1.3" marker-end="url(#ahz)"/>
+      <rect x="296" y="306" width="88" height="30" rx="7" fill="#2f1c18" stroke="#c4553b"/>
+      <text x="340" y="325" fill="#e5a893" text-anchor="middle">接管 → cancel</text>
+      <text x="398" y="325" fill="#6d6255" font-size="11">大文件正是多线程的活</text>
+
+      <!-- 6 -->
+      <rect x="16" y="350" width="234" height="38" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="133" y="368" fill="#cec4b6" text-anchor="middle">安装包 / 压缩包 / 镜像</text>
+      <text x="133" y="382" fill="#cec4b6" text-anchor="middle" font-size="11">数据集 / m3u8 流清单 ？</text>
+      <path d="M250 369 L292 369" stroke="#c4553b" stroke-width="1.3" marker-end="url(#ahz)"/>
+      <rect x="296" y="354" width="88" height="30" rx="7" fill="#2f1c18" stroke="#c4553b"/>
+      <text x="340" y="373" fill="#e5a893" text-anchor="middle">接管 → cancel</text>
+      <text x="398" y="373" fill="#6d6255" font-size="11">下坏了代价大，要验哈希</text>
+
+      <!-- 默认 -->
+      <rect x="16" y="398" width="234" height="26" rx="7" fill="#1a2620" stroke="#3d5540"/>
+      <text x="133" y="415" fill="#95bd80" text-anchor="middle" font-size="11.5">其余 → 默认放行</text>
+    </g>
+  </svg>
+  <figcaption>smart 模式的判定链。任一判断命中即出结果，不再往下走。</figcaption>
+  </figure>
+
+  <p>判定逻辑实现在 <code>jiliu/resource.py</code> 的 <code>intercept_decision()</code>，
+  插件通过 <code>POST /api/intercept</code> 调用它。也就是说 —— <strong>规则改在 Python 侧，
+  插件不用重新加载</strong>。</p>
+
+  <h3>接管之后</h3>
+  <p>汲流收到请求，再走一遍<strong>完整识别</strong>（这次是联网探测 + 读文件头，
+  比插件那点信息准得多），然后按类型选引擎、定线程数、决定要不要校验哈希，建任务开下。</p>
+
+  <div class="card info">
+    <span class="t">插件侧和主程序侧的判定是两套</span>
+    <p>插件那层是<strong>粗筛</strong> —— 它只有 URL、MIME 和文件名，还没碰过文件本身。
+    主程序那层是<strong>精判</strong> —— 能发 Range 请求读前 1KB 文件头。</p>
+    <p>所以可能出现：插件觉得该接管，汲流一看文件头发现是张 200KB 的图，
+    于是老老实实单线程下完了。这不算打架，这是分层。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="detect">
+  <h2>类型识别</h2>
+  <p class="lead"><code>jiliu/resource.py</code> —— 10 个分类、237 个后缀、64 条魔数签名。这是「下载接管」的脑子。</p>
+
+  <h3>四路嗅探</h3>
+  <p>一个文件是什么，可以从四个地方看出来。四条线索按可靠度加权，投票定胜负。</p>
+
+  <figure>
+  <svg viewBox="0 0 680 300" xmlns="http://www.w3.org/2000/svg" font-family="PingFang SC,Microsoft YaHei,sans-serif">
+    <defs>
+      <marker id="a2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L7,3 L0,6 z" fill="#5a4c3e"/>
+      </marker>
+    </defs>
+
+    <g font-size="12.5">
+      <!-- 四条线索 -->
+      <rect x="14" y="16" width="230" height="42" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="30" y="34" fill="#c9a227" font-size="12">①</text>
+      <text x="46" y="34" fill="#ded4c5">Content-Disposition 文件名</text>
+      <text x="46" y="50" fill="#7e7365" font-size="11">服务端自己声明的，最可信</text>
+      <text x="256" y="42" fill="#c9a227" font-family="monospace" font-size="12">0.35</text>
+      <path d="M252 37 L330 37" stroke="#5a4c3e" stroke-width="1.1"/>
+
+      <rect x="14" y="72" width="230" height="42" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="30" y="90" fill="#c9a227" font-size="12">②</text>
+      <text x="46" y="90" fill="#ded4c5">Content-Type MIME</text>
+      <text x="46" y="106" fill="#7e7365" font-size="11">常有 octet-stream 糊弄</text>
+      <text x="256" y="98" fill="#c9a227" font-family="monospace" font-size="12">0.60</text>
+      <path d="M252 93 L330 93" stroke="#5a4c3e" stroke-width="1.1"/>
+
+      <rect x="14" y="128" width="230" height="42" rx="8" fill="#221d18" stroke="#3b332a"/>
+      <text x="30" y="146" fill="#c9a227" font-size="12">③</text>
+      <text x="46" y="146" fill="#ded4c5">URL 路径后缀</text>
+      <text x="46" y="162" fill="#7e7365" font-size="11">CDN 常带假后缀或没有</text>
+      <text x="256" y="154" fill="#c9a227" font-family="monospace" font-size="12">0.50</text>
+      <path d="M252 149 L330 149" stroke="#5a4c3e" stroke-width="1.1"/>
+
+      <rect x="14" y="184" width="230" height="42" rx="8" fill="#2c1f1a" stroke="#c4553b"/>
+      <text x="30" y="202" fill="#dd8f77" font-size="12">④</text>
+      <text x="46" y="202" fill="#f0e2dc">文件头魔数 magic bytes</text>
+      <text x="46" y="218" fill="#a8806f" font-size="11">实打实的前 1KB，骗不了人</text>
+      <text x="256" y="210" fill="#dd8f77" font-family="monospace" font-size="12">1.00</text>
+      <path d="M252 205 L330 205" stroke="#c4553b" stroke-width="1.3"/>
+
+      <!-- 投票 -->
+      <rect x="332" y="72" width="132" height="118" rx="10" fill="#1e2a2f" stroke="#5f93a3"/>
+      <text x="398" y="112" fill="#8bbccb" text-anchor="middle" font-size="13.5" font-weight="bold">加权投票</text>
+      <text x="398" y="134" fill="#6f8f9a" text-anchor="middle" font-size="11">权重最高者定分类</text>
+      <text x="398" y="158" fill="#6f8f9a" text-anchor="middle" font-size="11">冲突时魔数优先</text>
+
+      <path d="M464 131 L508 131" stroke="#5a4c3e" stroke-width="1.4" marker-end="url(#a2)"/>
+
+      <!-- 输出 -->
+      <rect x="510" y="52" width="156" height="158" rx="10" fill="#231d13" stroke="#c9a227"/>
+      <text x="588" y="76" fill="#e3c46b" text-anchor="middle" font-size="12.5" font-weight="bold">ResourcePlan</text>
+      <text x="588" y="100" fill="#a89a72" text-anchor="middle" font-size="11">分类 + 具体类型</text>
+      <text x="588" y="122" fill="#a89a72" text-anchor="middle" font-size="11">引擎 / 线程 / 分片</text>
+      <text x="588" y="144" fill="#a89a72" text-anchor="middle" font-size="11">是否校验哈希</text>
+      <text x="588" y="166" fill="#a89a72" text-anchor="middle" font-size="11">能否解压 / 转码</text>
+      <text x="588" y="188" fill="#a89a72" text-anchor="middle" font-size="11">置信度 + 依据链</text>
+
+      <!-- 底部注释 -->
+      <rect x="14" y="240" width="652" height="44" rx="8" fill="#1a1613" stroke="#332c25"/>
+      <text x="30" y="258" fill="#8a7f70" font-size="11.5">注：魔数权重最高，因为它是四条线索里唯一无法被服务端伪造的。</text>
+      <text x="30" y="275" fill="#8a7f70" font-size="11.5">四个来源互相印证时置信度高；只有一个来源命中且是弱线索时，置信度会降到 0.3 以下并给出告警。</text>
+    </g>
+  </svg>
+  <figcaption>四条线索 → 加权投票 → 一份完整的下载策略</figcaption>
+  </figure>
+
+  <h3>魔数的二级分类</h3>
+  <p>文件头能分出大类，但同一个头下面还有细分 —— 这层最容易写漏。</p>
+
+  <h4>ZIP 家族（<code>PK\x03\x04</code>）</h4>
+  <p>光看头部，<code>.docx</code> / <code>.xlsx</code> / <code>.pptx</code> /
+  <code>.apk</code> / <code>.jar</code> / <code>.msix</code> / <code>.epub</code>
+  全都长一样。要<strong>解开内部条目名</strong>才能判断。</p>
+  <div class="card warn">
+    <span class="t">坑：必须扫全部条目，不能只看第一个</span>
+    <p>早期写法只读第一个 local file header。结果 MSIX 识别不出来 ——
+    因为它的 <code>[Content_Types].xml</code> 通常排在<strong>第二个</strong>，
+    第一个是别的东西。</p>
+    <p>改成循环扫全部条目名（上限 24 个），MSIX 就认出来了。</p>
+  </div>
+
+  <h4>RIFF 家族（<code>RIFF????</code>）</h4>
+  <p>要看偏移 8–12 字节：</p>
+  <ul>
+    <li><code>AVI </code> → 视频</li>
+    <li><code>WAVE</code> → 音频</li>
+    <li><code>WEBP</code> → 图片</li>
+  </ul>
+
+  <h4>MP4 家族（<code>????ftyp</code>）</h4>
+  <p>要看 brand：</p>
+  <ul>
+    <li><code>isom</code> / <code>mp42</code> → 视频</li>
+    <li><code>M4A </code> → 音频</li>
+    <li><code>avif</code> / <code>heic</code> → 图片</li>
+  </ul>
+
+  <h3>两个反直觉的设计</h3>
+
+  <div class="vs">
+    <div class="box good">
+      <h5>平台识别不压过后缀</h5>
+      <p style="font-size:13.5px;margin:0 0 8px">
+      <code>x.com/sprite.png</code> 命中了 X/Twitter 平台域名。
+      但它有明确的 <code>.png</code> 后缀，就是个静态图片 ——
+      不该硬塞给 yt-dlp 去「解析」。</p>
+      <p style="font-size:13.5px;margin:0">
+      所以有明确文件后缀且属于静态类型时，按直链处理。</p>
+    </div>
+    <div class="box good">
+      <h5>占位后缀让位给魔数</h5>
+      <p style="font-size:13.5px;margin:0 0 8px">
+      CDN 经常把 PDF 存成 <code>file.bin</code>。
+      如果后缀优先，就会当成「未知二进制」处理。</p>
+      <p style="font-size:13.5px;margin:0">
+      所以 <code>bin</code> / <code>dat</code> / <code>download</code> 这类
+      占位后缀被标记为 <em>generic</em>，魔数一旦有结论就直接改判。</p>
+    </div>
+  </div>
+
+  <h3>分类一览</h3>
+  <div class="badges">
+    <span class="badge"><span class="d" style="background:#c4553b"></span><b>视频</b><small>video</small></span>
+    <span class="badge"><span class="d" style="background:#c9a227"></span><b>音频</b><small>audio</small></span>
+    <span class="badge"><span class="d" style="background:#5f93a3"></span><b>应用</b><small>app</small></span>
+    <span class="badge"><span class="d" style="background:#8d7bb0"></span><b>压缩包</b><small>archive</small></span>
+    <span class="badge"><span class="d" style="background:#6f9d5a"></span><b>文档</b><small>document</small></span>
+    <span class="badge"><span class="d" style="background:#b0764a"></span><b>光盘镜像</b><small>disk</small></span>
+    <span class="badge"><span class="d" style="background:#5f9d8a"></span><b>图片</b><small>image</small></span>
+    <span class="badge"><span class="d" style="background:#9c8fb5"></span><b>字体</b><small>font</small></span>
+    <span class="badge"><span class="d" style="background:#7f9d3e"></span><b>数据集/模型</b><small>dataset</small></span>
+    <span class="badge"><span class="d" style="background:#7a736a"></span><b>其他文件</b><small>other</small></span>
+  </div>
+
+  <h3>查一个东西是什么</h3>
+<pre><span class="c"># 联网探测 + 识别（会读文件头）</span>
+python jiliu.py classify https://example.com/thing
+
+<span class="c"># 纯离线判断，不联网</span>
+python jiliu.py classify -n setup.exe
+python jiliu.py classify -n data.bin -m application/pdf
+python jiliu.py classify -n huge.iso -s 4294967296
+
+<span class="c"># 想看它是怎么想的</span>
+python jiliu.py classify https://example.com/thing --reasons</pre>
+
+<pre>  分类     应用   (app)
+  具体类型 Windows 安装程序
+  引擎     multithread
+  并发     8 线程
+  分片     1.0 MiB
+  多线程门槛 1.0 MiB（低于则单线程）
+  下完校验 SHA256
+  可解压   否   可转码 否
+  置信度   0.95
+
+  判定依据：
+    · URL 后缀 .exe 指向「应用」
+    · Content-Type application/x-msdownload 指向「应用」
+    · 文件头 4d 5a 90 00 确认「PE 可执行文件」</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="matrix">
+  <h2>分类策略表</h2>
+  <p class="lead">每类东西该怎么下，是这张表说了算。</p>
+
+  <div class="tw">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:120px">分类</th>
+        <th class="c" style="width:78px">引擎</th>
+        <th class="c" style="width:64px">线程</th>
+        <th class="c" style="width:88px">分片</th>
+        <th class="c" style="width:88px">校验哈希</th>
+        <th class="c" style="width:78px">可解压</th>
+        <th>说明</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>视频</strong></td><td class="c">auto</td><td class="c">8</td>
+        <td class="c mono">1 MiB</td><td class="c n">–</td><td class="c n">–</td>
+        <td>直链走多线程；HLS / DASH 流清单交给 yt-dlp 合流</td>
+      </tr>
+      <tr>
+        <td><strong>音频</strong></td><td class="c">auto</td><td class="c">8</td>
+        <td class="c mono">1 MiB</td><td class="c n">–</td><td class="c n">–</td>
+        <td>可从视频里抽音轨（需 ffmpeg）</td>
+      </tr>
+      <tr style="background:rgba(95,147,163,.07)">
+        <td><strong>合集 / 播放列表</strong></td><td class="c">ytdlp</td><td class="c n">–</td>
+        <td class="c n">–</td><td class="c n">–</td><td class="c n">–</td>
+        <td>整串条目顺序下（并发＝同时下几集）；默认建子目录、文件名带序号</td>
+      </tr>
+      <tr style="background:rgba(196,85,59,.05)">
+        <td><strong>应用</strong></td><td class="c">多线程</td><td class="c">8</td>
+        <td class="c mono">1 MiB</td><td class="c y">是</td><td class="c n">–</td>
+        <td>安装包下坏了最坑，强制校验</td>
+      </tr>
+      <tr style="background:rgba(196,85,59,.05)">
+        <td><strong>压缩包</strong></td><td class="c">多线程</td><td class="c">8</td>
+        <td class="c mono">1 MiB</td><td class="c y">是</td><td class="c y">是</td>
+        <td>分卷包要全部下齐才能解压，只下一卷等于没下</td>
+      </tr>
+      <tr>
+        <td><strong>文档</strong></td><td class="c">多线程</td><td class="c">6</td>
+        <td class="c mono">512 KiB</td><td class="c n">–</td><td class="c n">–</td>
+        <td>体积普遍不大，小文件单线程反而更快</td>
+      </tr>
+      <tr style="background:rgba(196,85,59,.05)">
+        <td><strong>光盘镜像</strong></td><td class="c">多线程</td><td class="c">8</td>
+        <td class="c mono">4 MiB</td><td class="c y">是</td><td class="c y">是</td>
+        <td>几 GB 起，大分片省开销；务必留足磁盘</td>
+      </tr>
+      <tr>
+        <td><strong>图片</strong></td><td class="c">多线程</td><td class="c">4</td>
+        <td class="c mono">256 KiB</td><td class="c n">–</td><td class="c n">–</td>
+        <td>多为小文件，多数情况单线程直下更划算</td>
+      </tr>
+      <tr>
+        <td><strong>字体</strong></td><td class="c">多线程</td><td class="c">4</td>
+        <td class="c mono">256 KiB</td><td class="c n">–</td><td class="c n">–</td>
+        <td>同上</td>
+      </tr>
+      <tr style="background:rgba(196,85,59,.05)">
+        <td><strong>数据集/模型</strong></td><td class="c">多线程</td><td class="c">8</td>
+        <td class="c mono">4 MiB</td><td class="c y">是</td><td class="c y">是</td>
+        <td>体积大且常有官方哈希，下完必对</td>
+      </tr>
+      <tr style="background:rgba(95,147,163,.07)">
+        <td><strong>BT / 磁力</strong></td><td class="c">aria2</td><td class="c n">–</td>
+        <td class="c n">–</td><td class="c n">–</td><td class="c n">–</td>
+        <td>磁力 / 种子 / ed2k 交给 aria2 的 BT 引擎（DHT / PEX / LPD 找源）；
+            并发由 peer 数决定，人为指定线程数反而打架</td>
+      </tr>
+      <tr style="background:rgba(95,147,163,.07)">
+        <td><strong>网盘链接</strong></td><td class="c">native</td><td class="c">1</td>
+        <td class="c mono">1 MiB</td><td class="c n">–</td><td class="c n">–</td>
+        <td>只识别并说明如何取直链，不逆向私有接口；有直链就能满速多线程下</td>
+      </tr>
+      <tr>
+        <td><strong>其他文件</strong></td><td class="c">多线程</td><td class="c">8</td>
+        <td class="c mono">1 MiB</td><td class="c n">–</td><td class="c n">–</td>
+        <td>按通用策略处理</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="card">
+    <span class="t">三个刻意的设计</span>
+    <ul>
+      <li><strong>应用 / 压缩包 / 镜像 / 数据集强制校验哈希</strong> ——
+      这四类下坏了代价最大。装到一半报错的安装包、解压到 99% 失败的压缩包，
+      比压根没下更烦人。</li>
+      <li><strong>小文件降级单线程</strong> —— 每个分类都有
+      <code>min_multithread</code> 门槛。40 KB 的文件开 8 个连接，
+      握手开销比传输本身还大。</li>
+      <li><strong>文档并发降到 6、分片降到 512 KiB</strong> ——
+      文档普遍不大，太多连接是纯浪费。</li>
+    </ul>
+  </div>
+
+  <p style="color:var(--ink3); font-size:13px">
+  表里的 KiB / MiB 是 1024 进制。面板和命令行显示成 <code>1.00 MB</code>
+  也是按 1024 算的（跟 Windows 的习惯一致），不是 1000。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="protocol">
+  <h2>统一下载协议</h2>
+  <p class="lead">从各处复制来的「链接」并不都是 <code>http://</code> 开头。
+  汲流在识别类型之前先过一层协议判定，按链接的真实形态分流给不同引擎。</p>
+
+  <div class="tw">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:230px">链接形态</th>
+        <th style="width:150px">处理方式</th>
+        <th>走向</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="mono">magnet:?xt=urn:btih:…</td>
+        <td>取 info hash、还原显示名</td>
+        <td>aria2 的 BT 引擎</td>
+      </tr>
+      <tr>
+        <td class="mono">*.torrent</td>
+        <td>下种子后交给 BT 引擎</td>
+        <td>aria2 的 BT 引擎</td>
+      </tr>
+      <tr>
+        <td class="mono">ed2k://|file|…</td>
+        <td>eDonkey 链接</td>
+        <td>aria2 的 BT 引擎</td>
+      </tr>
+      <tr style="background:rgba(196,85,59,.05)">
+        <td class="mono">thunder://…</td>
+        <td>base64 解壳，去掉 <code>AA</code>…<code>ZZ</code></td>
+        <td>解出内层 URL 后照常识别</td>
+      </tr>
+      <tr style="background:rgba(196,85,59,.05)">
+        <td class="mono">qqdl://…</td>
+        <td>base64 解壳</td>
+        <td>解出内层 URL 后照常识别</td>
+      </tr>
+      <tr style="background:rgba(196,85,59,.05)">
+        <td class="mono">flashget://…</td>
+        <td>base64 解壳，再去 <code>[FLASHGET]</code> 标记</td>
+        <td>解出内层 URL 后照常识别</td>
+      </tr>
+      <tr>
+        <td>网盘分享页</td>
+        <td><strong>只识别 + 如实说明</strong></td>
+        <td>native 单线程</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="card">
+    <span class="t">迅雷链接长什么样</span>
+<pre>thunder://QUFodHRwOi8vY2RuLmV4YW1wbGUuY29tL3NldHVwLmV4ZVpa
+            └─ base64 解出来是 → AAhttp://cdn.example.com/setup.exeZZ
+                                 └─ 去掉 AA / ZZ → 真正的下载地址</pre>
+    <p>解壳之后的地址就是普通 HTTP 直链，交给多线程引擎跑满带宽。
+    <strong>壳里裹的也可能是个种子</strong>，所以解完还要重新走一遍完整识别。</p>
+  </div>
+
+  <div class="card">
+    <span class="t">BT 为什么不自己写</span>
+    <p>磁力 / 种子 / ed2k 一律交给 <strong>aria2</strong>，自研引擎不碰 P2P。
+    DHT 找源、PEX 交换、LPD 本地发现、peer 阻塞检测、分块优先级调度 ——
+    这是一个独立且庞大的领域，重写一遍的收益远小于直接复用 aria2。</p>
+    <p>代价是<strong>下 BT 需要 aria2c</strong>。没装时汲流会直接说
+    「BT 需要 aria2 后端」，不会假装在下然后卡在 0%。</p>
+  </div>
+
+  <div class="card">
+    <span class="t">网盘：说清楚能做什么、不能做什么</span>
+    <p><strong>不做</strong>：逆向百度网盘 / 夸克 / 115 的私有接口来「提速」。
+    那既违反服务条款，维护成本也高得离谱 —— 接口一改就废，属于典型的负资产。</p>
+    <p><strong>做</strong>：识别出是哪个网盘，然后告诉你<strong>怎么拿到直链</strong>。
+    拿到直链后，普通多线程引擎本来就能满速下。已识别的网盘：</p>
+    <p>百度网盘、阿里云盘、夸克网盘、天翼云盘、115 网盘、123 云盘、蓝奏云、
+    Google Drive、MEGA。（未列出的域名按普通链接处理，不做猜测。）</p>
+  </div>
+
+  <p>命令行随时可以查一个链接的协议判定：</p>
+<pre>python jiliu.py protocol <span class="s">"magnet:?xt=urn:btih:..."</span>
+python jiliu.py protocol <span class="s">"thunder://QUFodHRwOi8v..."</span>
+python jiliu.py protocol <span class="s">"https://pan.baidu.com/s/1abc"</span> --json</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="playlist">
+  <h2>合集下载</h2>
+  <p class="lead">B站合集、YouTube 播放列表与频道，都按「合集」处理。
+  这是单集下载之外最常用的一件事。</p>
+
+  <div class="card">
+    <span class="t">三个默认行为，都有理由</span>
+    <ul>
+      <li><strong>建子目录 + 文件名带序号前缀</strong>（<code>%pl_index% - </code>）——
+      不这么做，下完是一堆名字相似的文件混在一起，按标题排序就是乱的。</li>
+      <li><strong>可以先探测、只挑其中几集下</strong> —— 面板里是个勾选列表，
+      命令行用 <code>--items 3,5,7</code>。整季重下没人受得了。</li>
+      <li><strong>跳过已下载</strong> —— 补集时不用人工比对，同一集不会重复下。</li>
+    </ul>
+  </div>
+
+  <p><strong>B站合集优先走官方接口</strong>（更快、标题更准），
+  失败才回退到 yt-dlp 通用解析。</p>
+
+<pre><span class="c"># 先看合集里有什么</span>
+python jiliu.py playlist <span class="s">"https://www.bilibili.com/video/BV1xx411c7mD"</span>
+
+<span class="c"># 确认后整季下</span>
+python jiliu.py video <span class="s">"https://space.bilibili.com/xxx"</span> --playlist
+
+<span class="c"># 只下第 3、5、7 集</span>
+python jiliu.py video <span class="s">"https://space.bilibili.com/xxx"</span> --playlist --items 3,5,7
+
+<span class="c"># 只抽音轨（需 ffmpeg）</span>
+python jiliu.py video <span class="s">"&lt;url&gt;"</span> --playlist -x</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="panel">
+  <h2>面板</h2>
+  <p class="lead">双击 <code>jiliu.exe</code> 即起面板，浏览器自动打开
+  <code>http://127.0.0.1:8788</code>。布局照 IDM 的路子来 ——
+  左边分类，中间任务，底部状态。</p>
+
+<pre>┌─ 新建  展开合集  B站登录  环境体检  设置  协议支持  清理 ────┐
+├─ 地址栏 [____________________] 类型▾ 线程▾ [探测] [开始] ──┤
+├─ 暂停 继续 取消 │ 打开 定位 删除 │ 全选 取消选择 ──────────┤
+├──────────────┬────────────────────────────────────────────┤
+│ ▼ 分类        │  文件名        大小    进度      速度   剩余  │
+│   全部        │  ubuntu.iso   4.7GB   ▓▓▓▓░░   12.4MB/s  2m │
+│   视频        │  BV1xx...mp4  486MB   ▓▓▓▓▓▓   —        完成│
+│   合集        │                                            │
+│   BT / 磁力   │                                            │
+│   网盘链接    │                                            │
+│   ……          │                                            │
+│ ▼ 状态        │                                            │
+│   下载中/等待  │                                            │
+│   已完成/失败  │                                            │
+│ ▼ 已下载记录   │                                            │
+└──────────────┴────────────────────────────────────────────┘
+  就绪 · 3 个任务 · 直连 · yt-dlp 2026.08.19 · aria2 已就绪</pre>
+
+  <div class="card">
+    <span class="t">左侧分类树</span>
+    <p>按<strong>类型 / 状态 / 已下载记录</strong>三段分组。点一下就是筛选，
+    不用在几百个任务里翻。</p>
+  </div>
+
+  <div class="card">
+    <span class="t">底部状态栏</span>
+    <p>把关键环境信息一直摊在那儿：代理走直连还是走代理、yt-dlp 什么版本、
+    aria2 有没有就绪、有几个任务在跑。</p>
+    <p>少一次「为什么下不动」的来回猜测 —— <strong>状态栏里没看到 aria2，
+    「BT 下不动」就有答案了</strong>。</p>
+  </div>
+
+  <div class="card">
+    <span class="t">设置抽屉（七页）</span>
+    <p>常规、视频、合集、代理、Cookie、命名、BT。命名页可以<strong>实时试算</strong>模板：</p>
+<pre>%title% [%id%]   →   %(title).150B [%(id)s]</pre>
+    <p>改完立刻看到翻译结果，不用猜 yt-dlp 到底认不认这个变量。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="cli">
+  <h2>命令行</h2>
+  <p class="lead">面板能做的一切，命令行都能做。打包后把 <code>python jiliu.py</code> 换成 <code>jiliu.exe</code>。</p>
+
+<pre><span class="k">serve</span>      启动面板与 API
+  --port N           指定端口（默认 8788）
+  --open-browser     启动后自动开浏览器
+  --no-browser       打包版默认会开浏览器，用这个关掉
+
+<span class="k">add</span>        &lt;url&gt;   下载一个直链
+  -t N               线程数（不给则按识别结果）
+  -o DIR             输出目录
+  -n NAME            保存文件名（不给则从服务端推断）
+  -b native|aria2    指定后端
+  -s N               限速，字节/秒
+  --sha256 HASH      预期哈希，下完校验
+
+<span class="k">video</span>      &lt;url&gt;   解析并下载视频
+  -f FORMAT          格式串，如 "bv*+ba/b" 或 "137+140"
+  -o DIR             输出根目录
+  -i                 只打印元信息与格式列表，不下
+  --playlist         按合集处理（建子目录、文件名带序号）
+  --items N,N,N      只下指定序号（配合 --playlist）
+  -x, --audio        只抽音轨（需 ffmpeg）
+
+<span class="k">playlist</span>   &lt;url&gt;   展开合集 / 播放列表，列出条目
+  --limit N          最多列多少条（默认 200）
+  --full             完整解析（慢，但标题一定全）
+  --bili             强制走 B站官方接口
+
+<span class="k">classify</span>   &lt;url&gt;   识别类型与策略（不下载）
+  -n FILE            离线判断用的文件名
+  -m MIME            离线判断用的 MIME
+  -s SIZE            字节数，用于自适应并发
+  -r                 打印判定依据
+  --json             附完整 JSON
+  --tools            列出所有分类与策略总览
+
+<span class="k">probe</span>      &lt;url&gt;   探测资源
+  -k http|video      探测类型
+
+<span class="k">protocol</span>   &lt;url&gt;   识别链接协议（磁力 / 迅雷 / ed2k / 种子 / 网盘）
+  --json             附完整 JSON
+
+<span class="k">bili</span>       [status|login|logout]
+                     查看登录状态 / 扫码登录 / 退出
+
+<span class="k">cookies</span>    [list|browsers|import|export|rm] [file]
+  --label DOMAIN     import 时的标签，决定存成哪个域名
+  --browser NAME     export 时从哪个浏览器读
+  --profile DIR      浏览器配置目录
+
+<span class="k">history</span>    [list|rm|clear|export|import] [key]
+  -q 关键词          按标题 / UP / ID 搜
+  --limit N          最多列多少条（默认 100）
+  --file PATH        export / import 的文件路径
+
+<span class="k">naming</span>             命名模板变量表
+  --pattern "%title% [%id%]"   试算一个模板，看翻译成 yt-dlp 后长什么样
+
+<span class="k">proxy</span>              代理状态与连通性测试
+  --test URL         测一个代理端点是否可达
+  --timeout N        测试超时（秒）
+  --url URL          按某个目标 URL 判断会走哪条路
+
+<span class="k">tools</span>               查看外部工具与后端状态
+<span class="k">config</span>              查看或修改配置
+  --set k=v [...]    例：--set threads=16 backend=aria2
+<span class="k">list</span>                列出已保存的任务</pre>
+
+  <div class="card info">
+    <span class="t">B站登录与 Cookie</span>
+    <p>B站高清（1080P+）与部分合集需要登录态。两种拿凭据的方式：</p>
+<pre><span class="c"># 方式一：扫码登录（推荐）</span>
+python jiliu.py bili login       <span class="c"># 面板菜单里也有「B站登录」按钮</span>
+
+<span class="c"># 方式二：从浏览器导出 cookies.txt 后导入</span>
+python jiliu.py cookies import cookies.txt --label bilibili.com
+python jiliu.py cookies browsers  <span class="c"># 看本机哪些浏览器能被读</span></pre>
+    <p>⚠️ <strong>Chrome / Edge 127+ 读不了</strong>（App-Bound 加密，纯 Python 解不开，
+    yt-dlp 也一样）。Firefox 不受影响。</p>
+  </div>
+
+  <div class="card info">
+    <span class="t">双击 exe 等于 serve</span>
+    <p>打好的 <code>jiliu.exe</code> 不带参数双击时，会自动执行
+    <code>serve</code> 并打开浏览器 —— 双击就该是「能用」，而不是弹一屏帮助。</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<section id="tools">
+  <h2>外部工具</h2>
+  <p class="lead">汲流本身不捆绑 ffmpeg。<strong>有则用，没有则降级，不会假装能用。</strong></p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:130px">工具</th><th>用途</th><th style="width:260px">必需性</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>yt-dlp</strong></td>
+        <td>视频站解析与下载</td>
+        <td>打包版已内置；便携版可放 <code>bin/yt-dlp.exe</code> 覆盖成更新的</td>
+      </tr>
+      <tr>
+        <td><strong>ffmpeg</strong></td>
+        <td>音视频合并、抽音轨</td>
+        <td>下「音视频分离」的站点（B站、YouTube 高清）必需</td>
+      </tr>
+      <tr>
+        <td><strong>ffprobe</strong></td>
+        <td>媒体信息探测</td>
+        <td>可选</td>
+      </tr>
+      <tr>
+        <td><strong>aria2c</strong></td>
+        <td>备用下载引擎</td>
+        <td>可选。也可当 Motrix 的 RPC 后端用</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>放哪儿？<strong>便携版</strong>放程序目录的 <code>bin/</code>；
+  <strong>安装版</strong>放 exe 同级的 <code>bin/</code> 或 <code>tools/</code>。
+  汲流会自动认出来。</p>
+
+  <h3>yt-dlp 的版本择优</h3>
+  <div class="card warn">
+    <span class="t">不看形式，看版本号</span>
+    <p>机器上可能同时存在三份 yt-dlp：scoop 装的 exe、pip 装的 module、
+    exe 里内置的那份。汲流会把三份都拿出来<strong>比版本号</strong>，选最新的用。</p>
+    <p>为什么在意这个：<strong>站点改版太频繁</strong>，差两年的老版本会大面积解析失败。
+    版本旧不是「功能少一点」，是「根本用不了」。</p>
+  </div>
+
+<pre><span class="c"># 看当前状态：工具、后端、状态目录</span>
+python jiliu.py tools</pre>
+
+<pre>  ✔ yt-dlp   2026.08.19
+      C:\Users\...\vendor\yt_dlp   (内置)
+  ✘ ffmpeg   未找到
+      --   (无)
+  ✔ aria2c   1.37.0
+      D:\Tools\aria2\aria2c.exe   (PATH)
+
+  下载后端：配置 auto  →  实际 aria2
+    native  自研多线程分片，无外部依赖
+    aria2   检测到 aria2c，自动优先使用
+</pre>
+</section>
+
+<!-- ============================================================ -->
+<section id="config">
+  <h2>配置</h2>
+  <p class="lead">一个 JSON 文件，一个 CLI 入口，没有隐藏设置。</p>
+
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:250px">位置</th><th>什么时候用它</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">~/.jiliu/config.json</td><td>源码运行 / 安装版</td></tr>
+      <tr><td class="mono">程序目录/data/config.json</td><td>便携版（有 <code>portable</code> 标记时）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>常用项</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:190px">键</th><th class="c" style="width:120px">默认</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">download_dir</td><td class="c mono">~/Downloads</td><td>下载目录（便携模式为程序目录下）</td></tr>
+      <tr><td class="mono">threads</td><td class="c mono">8</td><td>分片线程数</td></tr>
+      <tr><td class="mono">port</td><td class="c mono">8788</td><td>面板 / API 端口</td></tr>
+      <tr><td class="mono">max_concurrent</td><td class="c mono">3</td><td>同时下载的任务数上限</td></tr>
+      <tr><td class="mono">backend</td><td class="c mono">auto</td><td><code>native</code> / <code>aria2</code> / <code>auto</code></td></tr>
+      <tr><td class="mono">speed_limit</td><td class="c mono">0</td><td>全局限速（字节/秒），0 不限</td></tr>
+      <tr><td class="mono">min_multipart</td><td class="c mono">1048576</td><td>小于此值不走多线程</td></tr>
+      <tr><td class="mono">chunk_min / chunk_max</td><td class="c mono">512K / 8M</td><td>分片块大小上下限</td></tr>
+      <tr><td class="mono">video_format</td><td class="c mono">bv*+ba/b</td><td>最佳画质+最佳音轨，没有则最佳单文件</td></tr>
+      <tr><td class="mono">video_dir</td><td class="c mono">videos</td><td>视频保存子目录</td></tr>
+      <tr><td class="mono">aria2_rpc_url</td><td class="c mono">（空）</td><td>连已有的 aria2 RPC；Motrix 默认 <code>16800</code></td></tr>
+      <tr><td class="mono">max_retries</td><td class="c mono">5</td><td>单个分片重试次数</td></tr>
+      <tr><td class="mono">timeout</td><td class="c mono">30</td><td>单请求超时（秒）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+<pre>python jiliu.py config --set threads=16
+python jiliu.py config --set backend=aria2
+python jiliu.py config --set download_dir=<span class="s">"D:/Downloads"</span>
+python jiliu.py config --set speed_limit=0        <span class="c"># 解除限速</span></pre>
+
+  <div class="card warn">
+    <span class="t">只接受已知键</span>
+    <p><code>--set</code> 遇到不认识的键会<strong>忽略并提示</strong>，不会静默写进去。
+    手写 JSON 时也一样 —— 加载时只读取 <code>DEFAULTS</code> 里有的键，
+    拼错的键不会生效，也不会污染配置。</p>
+  </div>
+
+  <h3>环境变量</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:230px">变量</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">JILIU_HOME</td><td>强制状态目录。多实例隔离 / 测试用</td></tr>
+      <tr><td class="mono">JILIU_PORTABLE</td><td>设为 <code>1</code> 强制便携模式</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>HTTP API</h3>
+  <p>面板和插件都走这套接口，也可以自己调。</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th style="width:80px">方法</th><th style="width:230px">路径</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">GET</td><td class="mono">/api/health</td><td>存活探测</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/state</td><td>任务 + 统计 + 代理 / Cookie / 记录 / 命名 快照（面板每秒轮询）</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/tasks</td><td>任务列表（<code>?log=N</code> 带日志尾巴）</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/tasks/&lt;id&gt;</td><td>单个任务详情</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/tasks</td><td><strong>建任务</strong>（自动识别类型并套用策略）</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/tasks/&lt;id&gt;/pause · resume · cancel · remove</td><td>任务控制</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/tasks/&lt;id&gt;/open · reveal</td><td>打开产物 / 在资源管理器中定位</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/tasks/clear-finished</td><td>清掉已结束的任务</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/categories</td><td>全部分类与策略</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/classify</td><td>纯离线识别（给 filename / mime / size）</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/probe</td><td>探测直链元信息</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/inspect</td><td>联网探测 + 识别</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/protocol</td><td>协议判定（磁力 / 迅雷 / ed2k / 网盘）</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/intercept</td><td>接管决策（<strong>插件调的就是这个</strong>）</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/video/probe · playlist · inspect · diagnose</td><td>视频元信息 / 合集展开 / 详情 / 失败诊断</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/env</td><td>环境体检（工具、后端、目录、平台）</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/proxy</td><td>代理现状与分流策略</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/proxy/test · detect</td><td>测代理端点 / 嗅探本机可用代理</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/cookies</td><td>凭据文件清单</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/cookies/save · delete</td><td>保存 / 删除凭据</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/naming</td><td>命名变量表</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/naming</td><td>命名模板试算</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/history</td><td>已下载记录（<code>-q</code> 搜索）</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/history/remove · clear</td><td>删记录</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/bili</td><td>B站登录状态（带 60 秒缓存）</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/bili/resolve</td><td>解析 B站链接类型（视频 / 合集 / 番剧）</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/bili/login/qr · poll · logout</td><td>扫码登录流程</td></tr>
+      <tr><td class="mono">GET/POST</td><td class="mono">/api/config</td><td>读 / 改配置</td></tr>
+      <tr><td class="mono">GET</td><td class="mono">/api/tools</td><td>外部工具状态（<code>?refresh=1</code> 强制重扫）</td></tr>
+      <tr><td class="mono">POST</td><td class="mono">/api/handoff/motrix</td><td>把任务转交给 Motrix</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="color:var(--ink3); font-size:13px">
+  工具探测与后端探测都带 60 秒缓存 —— 一次完整探测要 spawn 四五个子进程，
+  而面板是<strong>每秒</strong>轮询的。没有缓存会白烧 CPU。
+  刚把新版 <code>yt-dlp.exe</code> 丢进 <code>bin/</code> 时，用
+  <code>/api/tools?refresh=1</code> 立刻重扫。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="faq">
+  <h2>常见问题</h2>
+
+  <h3>为什么 exe 有 17 MB？</h3>
+  <p>因为把整个 yt-dlp 包进去了。yt-dlp 靠 <code>importlib</code>
+  <strong>动态加载</strong> extractor —— 几千个站点的解析器分散在几百个模块里，
+  只做静态分析会漏掉一大半（冻结态实测枚举出 1752 个 extractor）。
+  必须 <code>--collect-submodules yt_dlp</code> 整包收集。</p>
+  <p>换来的是：<strong>目标机器不装 Python 也能用</strong>。如果更在意体积，
+  可以改成不内置、只走 <code>bin/yt-dlp.exe</code> 外部依赖 —— 代价是视频功能
+  得自己准备一份 yt-dlp。</p>
+
+  <h3>磁力 / 种子下不动？</h3>
+  <p>BT 需要 <strong>aria2c</strong>。汲流不自研 P2P（DHT 找源、PEX、peer 调度是
+  一个独立领域，重写一遍收益远小于复用 aria2），磁力 / <code>.torrent</code> /
+  ed2k 一律交给 aria2 的 BT 引擎。</p>
+  <p>没装 aria2c 时任务会明确报「BT 需要 aria2 后端」，不会假装在下。
+  放一个 <code>aria2c.exe</code> 进 <code>bin/</code> 即可 ——
+  面板左下角状态栏和「环境体检」都能看到它有没有被认出来。</p>
+
+  <h3>网盘链接为什么不能直接下？</h3>
+  <p>因为汲流<strong>不逆向网盘的私有接口</strong>（百度 / 夸克 / 115 这类）。
+  那既违反服务条款，维护成本也高得离谱 —— 接口一改就废。</p>
+  <p>汲流能做的是：认出这是哪个网盘，然后告诉你<strong>怎么拿到直链</strong>。
+  拿到直链之后，普通多线程引擎本来就能满速下。已识别的网盘见
+  <a href="#protocol">统一下载协议</a>。</p>
+
+  <h3>YouTube 报「Sign in to confirm you're not a bot」</h3>
+  <p>这是 YouTube 的风控，<strong>不是解析器坏了</strong>。两个条件缺一不可：</p>
+  <ul>
+    <li><strong>本机代理</strong> —— 国内直连本来就到不了 YouTube</li>
+    <li><strong>登录态 Cookie</strong> —— 用插件导出 <code>cookies.txt</code>，
+    然后 <code>jiliu.exe cookies import cookies.txt --label youtube.com</code></li>
+  </ul>
+  <p>⚠️ <strong>Chrome / Edge 127+ 的 Cookie 直接读不了</strong>：它们给 cookie 库
+  加了 App-Bound 加密，纯 Python 解不开（<code>yt-dlp --cookies-from-browser</code>
+  同样不行）。Firefox 不受影响；否则就用扩展导出 cookies.txt 再导入。</p>
+
+  <h3>迅雷 / 旋风 / 快车的链接能用吗？</h3>
+  <p>能。这三种「专属链接」本质上是<strong>普通 URL 套了一层 base64 壳</strong>，
+  解开就是普通下载地址。汲流在识别类型之前会先解壳，解完的地址照常多线程下载。</p>
+  <p>注意壳里裹的<strong>也可能是种子</strong> —— 所以解壳不是终点，
+  解完还要再走一遍完整识别。</p>
+
+  <h3>下载速度没变快？</h3>
+  <p>先跑 <code>jiliu.py probe &lt;url&gt;</code> 看服务端支不支持 Range。
+  <strong>不支持就只能单线程</strong> —— 有些 CDN 和网盘故意这么干，
+  这不是汲流的问题，也没法绕。</p>
+  <p>另外确认文件不小于 <code>min_multipart</code>（默认 1 MiB）。
+  小文件是故意降级单线程的。</p>
+
+  <h3>视频下下来没有声音？</h3>
+  <p>B站、YouTube 的高清是<strong>音视频分离</strong>的（视频一路、音频一路），
+  需要 ffmpeg 合并。装个 ffmpeg 放进 <code>bin/</code> 就好。</p>
+  <p>临时应急可以用 <code>-f</code> 选一个有声音的单文件格式：</p>
+<pre>python jiliu.py video &lt;url&gt; -f <span class="s">"b[ext=mp4]"</span>   <span class="c"># 单文件，画质通常 720p 以内</span></pre>
+
+  <h3>被接管了想拿回来？</h3>
+  <p>插件弹窗里把模式改成 <code>off</code>，立刻生效，不用重启浏览器。</p>
+  <p>只想让某几个站别被接管？填进 <code>skipHosts</code>，每行一个域名。</p>
+
+  <h3>DRM 的内容下不了</h3>
+  <p>是设计如此。<code>video.probe()</code> 会检测 DRM 并明确报出来，
+  而不是让你等一个注定失败的任务。本工具不提供也不打算提供 DRM 破解能力。</p>
+
+  <h3>分片下载中断了怎么办</h3>
+  <p>直接用<strong>相同命令</strong>再跑一次就行 —— 已完成的区间会跳过。
+  任务记录里也会保留断点信息。</p>
+
+  <h3>怎么彻底清干净？</h3>
+  <ul>
+    <li><strong>安装版</strong>：控制面板卸载，或跑 <code>jiliu-setup.exe --uninstall</code>。
+    之后手动删 <code>~/.jiliu/</code>（配置与任务记录）。</li>
+    <li><strong>便携版</strong>：整个文件夹删掉即可，不残留任何东西。</li>
+  </ul>
+</section>
+
+<footer>
+  汲流 Jiliu v1.0.0 &nbsp;·&nbsp; MIT License<br>
+  本工具仅用于下载您有权获取的内容。使用者应自行遵守内容提供方的服务条款与当地法律法规。<br>
+  不提供 DRM 破解能力，也不打算提供。
+</footer>
+
+</div>
+</body>
+</html>

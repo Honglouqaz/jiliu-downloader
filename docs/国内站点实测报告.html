@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>汲流 · 国内视频站点链接实测报告</title>
+<style>
+  :root{
+    --bg:#14161a; --bg2:#1b1e24; --bg3:#22262e; --line:#2e343e;
+    --fg:#e8eaee; --fg2:#a8b0bd; --fg3:#767f8d;
+    --ok:#4ec9a0; --warn:#e0b955; --bad:#e06c6c; --info:#6aa9e0;
+    --mono:ui-monospace,"Cascadia Mono","Consolas","Microsoft YaHei",monospace;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font:15px/1.7 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    padding:48px 24px 80px;
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:28px;margin:0 0 8px;letter-spacing:.5px}
+  h1 small{display:block;font-size:14px;font-weight:400;color:var(--fg2);margin-top:10px;letter-spacing:0}
+  h2{font-size:19px;margin:44px 0 6px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  h3{font-size:15px;margin:26px 0 8px;color:var(--fg2);font-weight:600}
+  p{margin:10px 0;color:var(--fg2)}
+  code{font-family:var(--mono);font-size:13px;background:var(--bg3);
+       padding:2px 6px;border-radius:4px;color:#d6dbe3}
+  a{color:var(--info)}
+  .lede{font-size:16px;color:var(--fg);border-left:3px solid var(--info);
+        padding:2px 0 2px 16px;margin:18px 0 26px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+         gap:12px;margin:22px 0 6px}
+  .card{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+  .card .n{font-size:30px;font-weight:650;line-height:1.1;font-family:var(--mono)}
+  .card .l{font-size:12.5px;color:var(--fg3);margin-top:6px}
+  .n-ok{color:var(--ok)} .n-warn{color:var(--warn)}
+  .n-bad{color:var(--bad)} .n-info{color:var(--info)}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--fg3);font-weight:600;font-size:12.5px;
+     text-transform:uppercase;letter-spacing:.6px;white-space:nowrap}
+  tbody tr:hover{background:var(--bg2)}
+  td.s{white-space:nowrap;font-weight:600}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .mut{color:var(--fg3)}
+  .tag{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:20px;
+       border:1px solid currentColor;line-height:1.6;white-space:nowrap}
+  .box{background:var(--bg2);border:1px solid var(--line);border-radius:10px;
+       padding:16px 20px;margin:18px 0}
+  .box.warnbox{border-left:3px solid var(--warn)}
+  .box.okbox{border-left:3px solid var(--ok)}
+  .box.badbox{border-left:3px solid var(--bad)}
+  .box p:first-child{margin-top:0}
+  .box p:last-child{margin-bottom:0}
+  pre{background:#101216;border:1px solid var(--line);border-radius:8px;
+      padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;
+      color:#c8ced8;line-height:1.6}
+  .k{color:#d6dbe3;font-family:var(--mono);font-size:13px}
+  ol,ul{color:var(--fg2);padding-left:22px}
+  li{margin:6px 0}
+  .fn{font-size:12.5px;color:var(--fg3);border-top:1px solid var(--line);
+      margin-top:44px;padding-top:16px}
+  .wrap-t{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>国内视频站点链接实测报告
+    <small>汲流 Jiliu v1.1.0 &nbsp;·&nbsp; 实测于 2026-09-23 &nbsp;·&nbsp;
+      21 个站点（国内 16 / 海外 5）&nbsp;·&nbsp; 脚本 <code>build/_test_cn_sites.py</code></small>
+  </h1>
+
+  <p class="lede">
+    <strong>结论先说：国内 16 个站点里，7 个开箱可用，3 个只差一份 Cookie，
+    1 个被限流，1 个上游解析器坏了，4 个 yt-dlp 根本不支持。</strong>
+    后 4 个是能力缺口，不是配置问题 —— 界面上会如实说明，不会让你等一个必然的失败。
+  </p>
+
+  <div class="cards">
+    <div class="card"><div class="n n-ok">7</div><div class="l">开箱可用</div></div>
+    <div class="card"><div class="n n-warn">3</div><div class="l">需 Cookie</div></div>
+    <div class="card"><div class="n n-warn">1</div><div class="l">被限流</div></div>
+    <div class="card"><div class="n n-bad">1</div><div class="l">上游解析器失效</div></div>
+    <div class="card"><div class="n n-bad">4</div><div class="l">yt-dlp 不支持</div></div>
+  </div>
+
+  <h2>一、国内 16 站逐站结果</h2>
+
+  <div class="wrap-t">
+  <table>
+    <thead>
+      <tr><th>站点</th><th>结果</th><th>最高画质</th><th>实测说明</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>哔哩哔哩</strong></td>
+        <td class="s ok">✅ 可用</td><td>1080p（15 档格式）</td>
+        <td>免登录。有官方扫码登录接口，可拿 1080P 以上</td>
+      </tr>
+      <tr>
+        <td><strong>优酷</strong></td><td class="s ok">✅ 可用</td><td>1080p</td>
+        <td>免登录，2.3 秒解析完成</td>
+      </tr>
+      <tr>
+        <td><strong>腾讯视频</strong></td><td class="s ok">✅ 可解析</td><td>—</td>
+        <td>认 <code>/x/cover/&lt;cid&gt;.html</code> 剧集页；不带登录态通常只给试看片段</td>
+      </tr>
+      <tr>
+        <td><strong>芒果TV</strong></td><td class="s ok">✅ 可用</td><td>3 档</td>
+        <td>免登录。⚠️ 节目下架会换页，要用当前的 <code>/b/&lt;栏目id&gt;/&lt;集id&gt;.html</code></td>
+      </tr>
+      <tr>
+        <td><strong>微博</strong></td><td class="s ok">✅ 可用</td><td>1080p</td>
+        <td>免登录，3 档格式</td>
+      </tr>
+      <tr>
+        <td><strong>AcFun</strong></td><td class="s ok">✅ 可用</td><td>1080p</td>
+        <td>免登录，4 档格式</td>
+      </tr>
+      <tr>
+        <td><strong>央视网</strong></td><td class="s ok">✅ 可用</td><td>270p</td>
+        <td>免登录。只认 <code>/&lt;年&gt;/&lt;月&gt;/&lt;日&gt;/VIDE….shtml</code> 与 <code>/video/</code>，栏目页不算</td>
+      </tr>
+      <tr>
+        <td><strong>搜狐视频</strong></td>
+        <td class="s warn">⚠️ 限流</td><td>—</td>
+        <td>解析器认链接（<code>SohuV</code>），但接口回 <strong>429 Too Many Requests</strong> —— 换 IP 或隔一会儿重试，不是代码问题</td>
+      </tr>
+      <tr>
+        <td><strong>西瓜视频</strong></td>
+        <td class="s warn">⚠️ 需 Cookie</td><td>—</td>
+        <td><code>Ixigua: Cookies (not necessarily logged in) are needed</code>；短链 <code>v.ixigua.com</code> 需先展开</td>
+      </tr>
+      <tr>
+        <td><strong>抖音</strong></td>
+        <td class="s warn">⚠️ 需新鲜 Cookie</td><td>—</td>
+        <td><code>Douyin: Fresh cookies (not necessarily logged in) are needed</code> —— <strong>旧的 Cookie 也不行</strong></td>
+      </tr>
+      <tr>
+        <td><strong>小红书</strong></td>
+        <td class="s warn">⚠️ 需登录</td><td>—</td>
+        <td>必须给<strong>视频</strong>帖链接 + 登录态；图文帖会报 <code>No video formats found</code></td>
+      </tr>
+      <tr>
+        <td><strong>爱奇艺</strong></td>
+        <td class="s bad">❌ 解析器失效</td><td>—</td>
+        <td>换多个当前有效的播放页都报 <code>[iqiyi] Can't find any video</code> —— 非链接问题、非 Cookie 问题，是爱奇艺改版后上游没跟上</td>
+      </tr>
+      <tr>
+        <td><strong>快手</strong></td><td class="s bad">❌ 无解析器</td><td>—</td>
+        <td>yt-dlp 域名覆盖为空。要支持只能自研接口</td>
+      </tr>
+      <tr>
+        <td><strong>咪咕视频</strong></td><td class="s bad">❌ 无解析器</td><td>—</td>
+        <td>同上</td>
+      </tr>
+      <tr>
+        <td><strong>PP视频</strong></td><td class="s bad">❌ 无解析器</td><td>—</td>
+        <td>同上</td>
+      </tr>
+      <tr>
+        <td><strong>电影网</strong></td><td class="s bad">❌ 无解析器 + 403</td><td>—</td>
+        <td>yt-dlp 没有解析器；且站点对非浏览器 UA 直接 <strong>403</strong>，连首页都抓不到</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>二、方法：为什么必须分三层判</h2>
+
+  <p>这份报告的前两版结论都是<strong>错的</strong>，错在把三个不同的问题混成了一个。
+  分清楚之后数据才可信，所以把方法写在这里。</p>
+
+  <div class="wrap-t">
+  <table>
+    <thead>
+      <tr><th>层次</th><th>问的问题</th><th>怎么判</th><th>要不要联网</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>1. 站点能力</td><td>这个域名有没有解析器？</td>
+          <td>枚举 yt-dlp 的 extractor 表，抠 <code>_VALID_URL</code> 里的域名</td>
+          <td class="mut">不需要</td></tr>
+      <tr><td>2. 链接形态</td><td>yt-dlp 认不认这条 URL？</td>
+          <td>官方 <code>InfoExtractor.suitable(url)</code> API</td>
+          <td class="mut">不需要</td></tr>
+      <tr><td>3. 真实结果</td><td>实际能不能解出媒体？</td>
+          <td><code>yt-dlp --simulate -J</code>（只解析不下载）</td>
+          <td class="mut">需要</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="box badbox">
+    <p><strong>第一版的错：</strong>拿站点<strong>首页</strong>去喂 yt-dlp。
+    首页必然回 <code>Unsupported URL</code>，于是 21 个站全被判成「yt-dlp 不支持」。</p>
+    <p>而首页<strong>从来就不是播放页</strong> —— yt-dlp 设计上就不解析首页。
+    这个错误当时看起来「跑通了」，其实结论完全反了。</p>
+  </div>
+
+  <div class="box badbox">
+    <p><strong>第二版的错：</strong>改用 <code>_VALID_URL</code> 抠域名之后，
+    建出来的表仍然是空的，于是又全判「无解析器」。</p>
+    <p>两个原因叠在一起：<code>_VALID_URL</code> 不一定是字符串（有些 extractor
+    写成 list），<code>list.replace</code> 抛 <code>AttributeError</code>；
+    而这个异常被外层一个宽泛的 <code>except: pass</code> 吞掉了 ——
+    表现为「跑通了但结果全是空的」，比直接报错难查得多。</p>
+    <p>修好之后表里有 <strong>1593 个域名</strong>，再展开
+    <code>(?:cntv|cctv)\.(?:com|cn)</code> 这类带分支的写法，
+    CCTV 和 Twitter 才没被漏判成「无解析器」。</p>
+  </div>
+
+  <div class="box">
+    <p><strong>还有一个隐性错误：</strong>报告一度被写到项目根目录而不是
+    <code>build/</code>，而脚本照样打印「报告已写入」。
+    原因是 <code>Path.with_name()</code> 作用在<strong>目录</strong>上会把最后一段
+    （<code>build</code>）整个替换掉。这类「看着成功了、东西在别处」的问题，
+    只能靠写完立刻核对文件时间戳来发现。</p>
+  </div>
+
+  <h3>链接从哪来</h3>
+  <p>不看真实播放页就测不出真相，所以链接取三级来源：</p>
+  <ol>
+    <li><strong>登记链接</strong>（<code>jiliu/sites.py</code> 的 <code>probe</code>）——
+      每个站维护一条当前有效的播放页；</li>
+    <li><strong>自动发现</strong>（<code>build/_discover_links.py</code>）——
+      抓站点首页/榜单页 HTML，正则出同域且路径匹配播放页特征的链接。
+      对纯前端渲染的站（爱奇艺、抖音、小红书）抓不到，改走它们的<strong>公开搜索接口</strong>
+      （如 <code>search.video.iqiyi.com/o</code>），从返回内容里正则出播放页；</li>
+    <li><strong>人工核实</strong> —— 前两条都拿不到时，用公开可核实的地址，并把来源写在脚本注释里。</li>
+  </ol>
+
+  <h2>三、海外 5 站</h2>
+  <div class="wrap-t">
+  <table>
+    <thead><tr><th>站点</th><th>结果</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><strong>YouTube</strong></td><td class="s ok">✅ 可用</td>
+          <td>走代理拿 2160p，48 档格式。风控严格：需本机代理 + 登录 Cookie，缺一不可</td></tr>
+      <tr><td><strong>Vimeo</strong></td><td class="s bad">❌ 需登录</td>
+          <td>报 <code>The web client only works when…</code> —— 免登录可下的公开视频变少了</td></tr>
+      <tr><td><strong>Twitch</strong></td><td class="s bad">❌ 需回放链接</td>
+          <td>频道页只在<strong>正在直播</strong>时可解析；回放有 7~60 天过期</td></tr>
+      <tr><td><strong>X / Twitter</strong></td><td class="s warn">⚠️ 需具体链接</td>
+          <td>只认 <code>/status/&lt;id&gt;</code> 单条推文；首页不算。基本都需要登录 Cookie</td></tr>
+      <tr><td><strong>TikTok</strong></td><td class="s warn">⚠️ 需具体链接</td>
+          <td>只认 <code>/@user/video/&lt;id&gt;</code>；首页不算。多数内容需登录</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>四、这些结论落到了哪里</h2>
+
+  <div class="box okbox">
+    <p><strong>1. 写进代码旁边的注释。</strong>
+    每个站点的实测现状（哪家免登录、哪家要 Cookie、哪家链接会过期、哪家干脆不支持）
+    都记在 <code>jiliu/sites.py</code> 的 <code>note</code> 字段里。
+    改代码的人一眼能看到上次测出来是什么样，不用重新踩一遍。</p>
+  </div>
+
+  <div class="box okbox">
+    <p><strong>2. 写进界面。</strong>
+    「站点」菜单直接展示这张表（国内/海外分组 + 每家现状），
+    遇到不支持的站点会<strong>如实说「本站暂不支持」</strong>，
+    而不是让你等一个必然的失败。</p>
+  </div>
+
+  <div class="box okbox">
+    <p><strong>3. 做成可重跑的脚本。</strong>
+    <code>build/_test_cn_sites.py</code> 可以随时重跑（全量约 1.5 分钟，
+    <code>--offline</code> 秒出离线判定）。站点会变、上游会修，
+    这张表本来就不是一次性的。</p>
+  </div>
+
+  <div class="box okbox">
+    <p><strong>4. 顺手修掉两个真 bug。</strong>
+    发现 <code>sites.py</code> 里两条过宽的路径特征把 API 端点误判成了播放页 ——
+    Twitch 的 <code>gql.twitch.tv/gql</code>、Vimeo 的
+    <code>progressive_redirect</code> 直链。这类误判会让普通链接被硬塞给 yt-dlp，
+    白白失败一次。已收紧，并在测试里加了守护断言。</p>
+  </div>
+
+  <h2>五、复现命令</h2>
+<pre># 全量实测（联网，约 1.5 分钟）
+python build/_test_cn_sites.py
+
+# 只看离线判定：站点能力 + 链接形态（不联网，秒出）
+python build/_test_cn_sites.py --offline
+
+# 单条链接归因，打印完整 stderr
+python build/_probe_url.py "https://www.mgtv.com/b/896231/24547204.html"
+
+# 自动从站点首页 / 搜索接口捞一条真实播放页链接
+python build/_discover_links.py --json
+
+# 看代码里登记的站点现状
+python jiliu.py sites</pre>
+
+  <div class="fn">
+    报告数据来自 <code>build/_cn_sites_report.json</code>（机器可读）与
+    <code>build/_cn_sites_report.md</code>（表格）。
+    实测环境：Windows，yt-dlp 2026.08.19（extractor 表 1593 个域名），
+    系统代理走 <code>127.0.0.1:3067</code>，国内站默认直连。
+    <br>站点可用性会随对方改版与上游修复而变化，结论以重跑为准。
+  </div>
+
+</div>
+</body>
+</html>

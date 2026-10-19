@@ -1,0 +1,34 @@
+# ---- 构建产物 ----
+build/
+dist/
+*.spec
+
+# 打包用的第三方依赖（PyInstaller 本体、内置的 yt-dlp 源码）。
+# 体积大且可用 scripts/minipip.py 复现，不入库。
+buildtools/
+vendor/
+
+# ---- 运行时状态 ----
+# 便携模式下配置/任务/下载都落在程序目录的这些子目录里
+data/
+downloads/
+videos/
+
+# ---- 临时与日志 ----
+_smoke/
+*.log
+_pipe.log
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---- 编辑器 / 系统 ----
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini

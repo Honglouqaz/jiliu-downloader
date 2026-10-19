@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>汲流 · 大一统下载器实测报告与优化方案</title>
+<style>
+  :root{
+    --bg:#f6f3ec; --card:#fffdf8; --ink:#2b2620; --sub:#6b6357;
+    --accent:#8a2f2b; --ok:#2e7d4f; --warn:#b26a00; --bad:#a33a2e;
+    --line:#e5decf; --lv:#8a2f2b;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{font-family:"Source Han Serif SC","Noto Serif SC",serif; background:var(--bg); color:var(--ink); line-height:1.75; padding:40px 16px}
+  .wrap{max-width:960px; margin:0 auto}
+  h1{font-size:1.9rem; letter-spacing:.06em; margin-bottom:4px}
+  h1 small{display:block; font-size:.85rem; color:var(--sub); font-weight:normal; letter-spacing:.2em; margin-top:6px}
+  h2{font-size:1.25rem; margin:42px 0 14px; padding-left:12px; border-left:4px solid var(--accent)}
+  h3{font-size:1.05rem; margin:24px 0 10px; color:var(--accent)}
+  p{margin:10px 0}
+  .meta{color:var(--sub); font-size:.85rem; margin-bottom:24px}
+  table{width:100%; border-collapse:collapse; margin:14px 0; font-size:.92rem; background:var(--card)}
+  th,td{border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top}
+  th{background:#efe9db; font-weight:600; white-space:nowrap}
+  .ok{color:var(--ok); font-weight:600}
+  .warn{color:var(--warn); font-weight:600}
+  .bad{color:var(--bad); font-weight:600}
+  .card{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; margin:14px 0}
+  .card .t{font-weight:700; display:block; margin-bottom:6px}
+  .card.info{border-left:4px solid #4a6b8a}
+  .card.danger{border-left:4px solid var(--bad)}
+  code{background:#efe9db; padding:1px 6px; border-radius:4px; font-size:.88em; font-family:Consolas,monospace}
+  pre{background:#2b2620; color:#e8e2d5; padding:14px 16px; border-radius:8px; overflow-x:auto; font-size:.85rem; margin:12px 0}
+  pre .c{color:#9a917f}
+  ul{padding-left:22px; margin:8px 0}
+  li{margin:5px 0}
+  .phase{display:flex; gap:10px; align-items:flex-start; margin:10px 0}
+  .phase .n{flex:0 0 30px; height:30px; border-radius:50%; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700}
+  .phase .b{flex:1}
+  .num{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>汲流 · 大一统下载器实测报告与优化方案</h1>
+<p class="meta">墨 · 2026-09-28 · 基于 v1.4.0 便携版实测 + 本机软件对比 + 市面调研</p>
+
+<h2>一、实测：当前功能与真实速度</h2>
+
+<h3>1.1 下载速度实测（受控对照）</h3>
+<p>公网测速受 CDN 限速干扰分不出引擎优劣，所以做了一组<strong>本地受控限速源</strong>（每连接限 1 MB/s、64MB 文件）的对照实验——这是唯一能把「引擎并发能力」单独拎出来量化的方法：</p>
+
+<table>
+<tr><th>场景</th><th>工具 / 引擎</th><th>连接数</th><th>耗时</th><th>速度</th><th>结论</th></tr>
+<tr><td rowspan="3">本地限速源<br>（引擎对照实验）</td>
+  <td>裸 aria2c -x8（命令行）</td><td class="num">CN:8</td><td class="num">8.1s</td><td class="num ok">8.0 MiB/s</td><td class="ok">基准：8 连接满速</td></tr>
+<tr><td>手动 RPC daemon + addUri（汲流同款参数）</td><td class="num">CN:8</td><td class="num">8.1s</td><td class="num ok">8.0 MiB/s</td><td class="ok">RPC 链路本身没问题</td></tr>
+<tr><td>汲流 auto 路由（修复前）</td><td class="num">CN:1（curl）</td><td class="num">70.1s</td><td class="num bad">1.0 MB/s</td><td class="bad">❗ 发现真 bug（见 1.2）</td></tr>
+<tr><td rowspan="3">npmmirror 直链<br>29.5MB（CDN 限速）</td>
+  <td>单线程基线</td><td class="num">1</td><td class="num">15.3s</td><td class="num">1.93 MB/s</td><td rowspan="3">CDN 单 IP 限速 ~2MB/s，所有工具同量级，区分不出引擎</td></tr>
+<tr><td>IDM（静默 CLI）</td><td class="num">8</td><td class="num">19.0s</td><td class="num">1.55 MB/s</td></tr>
+<tr><td>汲流</td><td class="num">8</td><td class="num">27.3s</td><td class="num">1.08 MB/s</td></tr>
+<tr><td>B 站视频<br>20.5MB</td><td>汲流 yt-dlp 全流程</td><td class="num">—</td><td class="num">12.3s</td><td class="num ok">峰值 2.90 MB/s</td><td class="ok">解析+下载+合流全通</td></tr>
+<tr><td>B 站大视频<br>161.4MB</td><td>汲流（主人历史任务）</td><td class="num">—</td><td class="num">—</td><td class="num ok">done</td><td class="ok">大文件视频正常</td></tr>
+</table>
+
+<h3>1.2 实测抓到的真 bug（已修）</h3>
+<div class="card danger">
+  <span class="t">❗ P1：引擎回退链顺序错误 —— aria2 失败后掉进单连接 curl</span>
+  <p><code>fallback_chain</code> 的顺序是 <code>curl → wget → native</code>。实测中 aria2 一次失败后，任务被静默交给 <strong>curl（单连接）</strong>跑了 70 秒；而自研 native 引擎（8 线程）本可以用 8 秒跑完，却排在最后根本轮不到。<strong>已修</strong>：改为 <code>native → curl → wget</code>，并让回退日志带上失败原因（之前错误详情被吞，排查只能靠猜）。</p>
+</div>
+<div class="card info">
+  <span class="t">已知待查（低频）</span>
+  <p>① 一次任务在 queued 状态停了 332 秒才开跑（仅出现一次，未复现，怀疑与 aria2 daemon 冷启动超时相关）；② 一次 aria2 addUri 失败导致回退（疑似同名文件残留 + continue 冲突）。两项都已加了日志可观测性，下次复现有迹可循。</p>
+</div>
+
+<h3>1.3 速度结论</h3>
+<ul>
+  <li><strong>引擎层不是瓶颈</strong>：native 8 线程 + aria2 双引擎，并发能力经受控实验验证达标（8 连接跑满 8 MiB/s 的服务器上限）。</li>
+  <li><strong>公网速度由源站决定</strong>：CDN 限速、B 站 PCDN 单文件限速是常态，IDM 在同样的源上也跑不快（实测同文件 1.55 vs 汲流 1.08 MB/s，同一量级）。</li>
+  <li><strong>与 IDM 的差距不在速度，在「接管体验」</strong>：见下节。</li>
+</ul>
+
+<h2>二、对比本机下载软件：大一统还缺什么</h2>
+
+<p>主人本机现有六款下载工具：IDM、迅雷、qBittorrent、Motrix、Persepolis、4K Video Downloader。逐项对照：</p>
+
+<table>
+<tr><th>能力</th><th>IDM</th><th>迅雷</th><th>qBittorrent</th><th>Motrix</th><th>汲流现状</th><th>判定</th></tr>
+<tr><td>HTTP/HTTPS 多线程</td><td class="ok">●●●</td><td class="ok">●●</td><td>—</td><td class="ok">●●●</td><td class="ok">native 8 线程 + aria2</td><td class="ok">已覆盖</td></tr>
+<tr><td>磁力 / BT / ed2k</td><td class="bad">✗</td><td class="ok">●●●（P2SP 加速）</td><td class="ok">●●●</td><td class="ok">●●●</td><td class="ok">aria2 BT + DHT/PEX/LPD</td><td class="ok">已覆盖</td></tr>
+<tr><td>迅雷链 / 旋风 / 快车解码</td><td>—</td><td class="ok">●●●</td><td>—</td><td>—</td><td class="ok">protocols 模块全解</td><td class="ok">已覆盖（超预期）</td></tr>
+<tr><td>网页视频解析</td><td class="warn">部分</td><td class="warn">部分</td><td>—</td><td>—</td><td class="ok">yt-dlp（千站）+ 扫码登录态</td><td class="ok">强项</td></tr>
+<tr><td>媒体嗅探（popup 聚合）</td><td class="ok">●●●</td><td>—</td><td>—</td><td>—</td><td class="ok">content + webRequest 双层</td><td class="ok">已覆盖</td></tr>
+<tr><td>分类自动归档</td><td class="ok">●●●</td><td class="ok">●●</td><td>—</td><td class="ok">●●</td><td class="ok">layout 按类型落目录</td><td class="ok">已覆盖</td></tr>
+<tr><td><strong>浏览器下载接管</strong>（拦截普通下载点击）</td><td class="ok">●●●</td><td class="ok">●●●</td><td>—</td><td class="ok">●●</td><td class="bad">✗ 只有右键/悬浮/popup</td><td class="bad">缺失①</td></tr>
+<tr><td><strong>队列与调度</strong>（定时开始/优先级/顺序）</td><td class="ok">●●●</td><td class="ok">●●</td><td class="ok">●●●</td><td class="warn">●</td><td class="bad">✗ 只有 max_concurrent</td><td class="bad">缺失②</td></tr>
+<tr><td><strong>限速控制</strong>（全局/单任务/时段）</td><td class="ok">●●●</td><td class="ok">●●</td><td class="ok">●●●</td><td class="ok">●●</td><td class="warn">配置里有 speed_limit，无 UI</td><td class="bad">缺失③</td></tr>
+<tr><td>剪贴板监控（复制链接即弹）</td><td class="ok">●●</td><td class="ok">●●●</td><td>—</td><td class="ok">●●</td><td class="bad">✗</td><td class="bad">缺失④</td></tr>
+<tr><td>边下边播预览</td><td class="ok">●●●</td><td class="ok">●●</td><td class="ok">●●</td><td>—</td><td class="bad">✗</td><td class="warn">缺失⑤</td></tr>
+<tr><td>网站爬取（整站选单下载）</td><td class="ok">●●●</td><td>—</td><td>—</td><td>—</td><td class="bad">✗</td><td class="warn">缺失⑥</td></tr>
+<tr><td>RSS 订阅下载</td><td>—</td><td>—</td><td class="ok">●●●</td><td>—</td><td class="bad">✗</td><td class="warn">缺失⑦（低优）</td></tr>
+<tr><td>批量链接队列（粘贴 50 条）</td><td class="warn">●</td><td class="ok">●●</td><td>—</td><td class="ok">●●</td><td class="warn">合集逐条有，自由批量无</td><td class="warn">缺失⑧</td></tr>
+</table>
+
+<div class="card info">
+  <span class="t">结论</span>
+  <p>汲流的<strong>协议覆盖已经是大一统水准</strong>（HTTP/BT/磁力/ed2k/迅雷链/网页视频/嗅探，且是国内软件里少见的不掺广告不绑架流量的）。真正的差距集中在<strong>「接管日常下载」的体验层</strong>：浏览器下载接管、调度队列、限速 UI、剪贴板监控——这四项恰恰是 IDM/AB 的核心卖点，也是「用户把默认下载器换成汲流」的临门一脚。</p>
+</div>
+
+<h2>三、市面口碑调研：值得吸取的对象</h2>
+
+<table>
+<tr><th>软件</th><th>定位 / 口碑</th><th>最值得汲流吸取的一点</th></tr>
+<tr><td><strong>AB Download Manager</strong><br>（GitHub 10k+ ★，活跃）</td><td class="ok">新兴开源 IDM 替代，90% 相似 IDM，免费无广告，现代 UI</td><td><strong>浏览器全量接管 + 队列调度器 + 限速</strong>的完整组合，且证明了这三件事用开源做得又轻又好——汲流最直接的对标物</td></tr>
+<tr><td><strong>IDM</strong>（付费标杆）</td><td>速度与稳定性标杆，浏览器捕获体验最佳</td><td>动态分片（下完最快的一段立刻把空闲连接调过去）+ 悬浮视频面板的「零思考」体验</td></tr>
+<tr><td><strong>FDM</strong>（免费全能）</td><td class="ok">HTTP+BT+磁力一体，跨平台</td><td>网站爬取（crawl 一页选单）+ ZIP 部分下载 + 远程管理</td></tr>
+<tr><td><strong>Motrix</strong></td><td>现代 UI + aria2 核心（与汲流同引擎）</td><td>它证明 aria2 引擎包装成大众产品是成立的；但它的浏览器接管弱、更新放缓——汲流可以反超</td></tr>
+<tr><td><strong>qBittorrent</strong></td><td class="ok">BT 品类公认最佳，纯净无广告</td><td>RSS 订阅 + 内置搜索 + IP 过滤；汲流 BT 面板可以后期对标</td></tr>
+<tr><td><strong>JDownloader 2</strong></td><td>批量/文件床自动化之王</td><td>Link Grabber：粘贴 50 条链接自动识别入队——对应汲流缺失⑧</td></tr>
+<tr><td><strong>Neat Download Manager</strong></td><td>轻量（&lt;2MB），IDM 手感克隆</td><td>极致轻量——汲流 112MB 内存还有压缩空间</td></tr>
+<tr><td>迅雷</td><td class="warn">P2SP 加速强，但广告/隐私争议大</td><td>P2SP（多源同时拉）思路；但汲流不该学它的广告与限速商业模式</td></tr>
+</table>
+
+<h2>四、优化路线图（分四期）</h2>
+
+<div class="phase"><div class="n">Ⅰ</div><div class="b">
+  <h3>接管层 —— 让用户把默认下载器换成汲流（最高优先级）</h3>
+  <ul>
+    <li><strong>浏览器下载接管</strong>：插件用 <code>chrome.downloads.onDeterminingFilename</code> / <code>webRequest</code> 拦截普通下载点击，弹出「用汲流下载」确认条（AB/IDM 同款体验）。对视频站继续走嗅探逻辑，不冲突。</li>
+    <li><strong>剪贴板监控</strong>：主程序监听剪贴板，识别到直链/磁力时气泡询问（可开关，默认开）。</li>
+  </ul>
+</div></div>
+
+<div class="phase"><div class="n">Ⅱ</div><div class="b">
+  <h3>调度与限速 —— 追平 IDM/AB 的管理能力</h3>
+  <ul>
+    <li><strong>队列与优先级</strong>：任务可拖拽排序、置顶；定时开始/暂停（凌晨挂机下载）。</li>
+    <li><strong>限速 UI</strong>：全局限速 + 单任务限速 + 时段限速（工作时间自动限速），native 引擎补 per-connection throttle，aria2 走 <code>--max-download-limit</code>（已有底子）。</li>
+    <li><strong>批量粘贴入队</strong>：输入框支持多行链接，自动识别协议逐条建任务（补 JDownloader 的核心场景）。</li>
+  </ul>
+</div></div>
+
+<div class="phase"><div class="n">Ⅲ</div><div class="b">
+  <h3>体验细节 —— 差异化加分项</h3>
+  <ul>
+    <li><strong>边下边播</strong>：视频任务进度 &gt; 5% 即可在详情页预览（MP4 range 请求即可，已有 server 基础）。</li>
+    <li><strong>动态分片增强</strong>：native 引擎借鉴 IDM——最快分片完成时立即把空闲连接调往最大剩余区间（现有 <code>_claim</code> 已是雏形，补「完成时再平衡」）。</li>
+    <li><strong>下载完成动作</strong>：杀软扫描钩子 / 自动解压 / 完成通知音（FDM 特色）。</li>
+  </ul>
+</div></div>
+
+<div class="phase"><div class="n">Ⅳ</div><div class="b">
+  <h3>长线 —— 站点能力与生态</h3>
+  <ul>
+    <li><strong>网站爬取</strong>：输入列表页 URL，抓取媒体链接生成选单（FDM 站点抓取的开源平替）。</li>
+    <li><strong>RSS 订阅</strong>（追更场景：番剧/播客/UP 主更新自动下载）。</li>
+    <li><strong>BT 面板增强</strong>：做种管理、tracker 编辑、健康度显示（qBittorrent 对标，已有 bt 元数据底子）。</li>
+  </ul>
+</div></div>
+
+<h2>五、本轮已落地的修复</h2>
+<ul>
+  <li><code>jiliu/backends/__init__.py</code>：fallback_chain 改为 <code>native → curl → wget</code>，aria2 失败后不再掉单连接 curl。</li>
+  <li><code>jiliu/manager.py</code>：引擎回退日志带上失败原因。</li>
+  <li>以上修复在源码已验证（回退链输出 <code>['native', 'curl']</code>），<strong>尚未重新打包</strong>——与后续接管层功能一起进 v1.5.0。</li>
+</ul>
+
+<pre><span class="c"># 本轮实测产生的可复用工具（build/ 目录）</span>
+build/_throttle_srv.py     <span class="c"># 每连接限速的 HTTP 服务器（引擎并发对照实验用，keep-alive 版）</span>
+build/_live_speedtest.py   <span class="c"># 端到端实测：HTTP直链 / B站 / m3u8 / 磁力解析</span></pre>
+
+</div>
+</body>
+</html>

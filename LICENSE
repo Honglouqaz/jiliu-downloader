@@ -1,0 +1,56 @@
+MIT License
+
+Copyright (c) 2026 汲流 (Jiliu)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+=========================================================================
+第三方组件
+=========================================================================
+
+本项目的打包产物内含下列第三方组件，它们各自适用其原始许可：
+
+1. yt-dlp
+   许可：The Unlicense（公有领域）
+   主页：https://github.com/yt-dlp/yt-dlp
+   用途：视频站解析与下载。以源码形式置于 vendor/yt_dlp/，
+        打包时经 --collect-submodules 完整收集。
+
+2. PyInstaller
+   许可：GPL-2.0-or-later，附「打包产物例外条款」
+        （Bootloader Exception）
+   主页：https://pyinstaller.org/
+   说明：该例外条款明确允许使用 PyInstaller 打包的程序
+        以任意许可分发，不因此被传染为 GPL。
+        本项目仅在其构建阶段使用，不作为库链接。
+
+3. 浏览器插件图标
+   许可：本项目原创，随本项目以 MIT 分发。
+
+=========================================================================
+使用声明
+=========================================================================
+
+本工具仅用于下载您有权获取的内容。
+
+使用者应自行遵守内容提供方的服务条款、著作权法律
+以及所在地区的相关法规。开发者不对使用本工具下载的
+任何内容主张权利，也不对使用者的下载行为负责。
+
+本工具不提供任何 DRM 破解能力，也不打算提供。
