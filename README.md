@@ -1,5 +1,17 @@
 # 汲流 Jiliu
 
+> **English** — Jiliu is a multi-threaded download manager for Windows: HTTP/HTTPS,
+> BitTorrent and magnet links, netdisk share links, and video sites via yt-dlp.
+> Segmented downloads with resume, checksum verification, adaptive concurrency and
+> multi-mirror retry, a browser extension that takes over downloads and adds an
+> in-page download button plus a live progress overlay, and a native desktop window
+> (pywebview + WebView2) — no terminal, no address bar.
+> Ships as a portable zip: extract, run `jiliu.exe`, nothing outside the folder.
+>
+> [Download the latest release](https://github.com/Honglouqaz/jiliu-downloader/releases/latest)
+> · [Release notes (English)](RELEASE-1.9.6.en.md)
+> · Tested on Windows 11 / Python 3.13 / Chrome & Edge 130+.
+
 自建多线程下载器。四件事做到底：**认清是什么** → **用对的方式下** →
 **一个界面管全部** → **浏览器里替你接管**。
 

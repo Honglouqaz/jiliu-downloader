@@ -142,4 +142,19 @@
   要看明细还是回主面板。
 - 主程序窗口内的同类悬浮窗（那是 WebView 里的页面，已有顶部状态栏）。
 
+## 安装
+
+**便携版（推荐）** —— 下载 `jiliu-portable-1.9.6.zip`，解压到任意目录，双击 `jiliu.exe`。
+配置、任务、下载全部留在程序目录内，不写注册表、不碰用户目录。
+
+**单文件版** —— 下载 `jiliu-1.9.6.exe` 直接运行。依赖 Microsoft Edge WebView2 Runtime
+（Windows 10/11 一般已预装）。
+
+**浏览器扩展** —— 下载 `jiliu-extension-1.9.6.zip` 解压，打开 `chrome://extensions`
+（或 `edge://extensions`），开启「开发者模式」，点「加载已解压的扩展程序」，选中解压出的
+`extension` 目录。弹窗顶栏应显示 `v1.9.6`。
+
+> 已在 Windows 11 / Python 3.13 / Chrome、Edge 130+ 验证。
+> 非 Windows 平台可从源码运行：`python jiliu.py serve`。
+
 产物：`dist/jiliu-portable-1.9.6.zip`、扩展 `extension/`（重新加载即可）。
