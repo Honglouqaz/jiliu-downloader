@@ -2,6 +2,12 @@
 
 const $ = (s) => document.querySelector(s);
 
+// 扩展版本摆出来：改完代码要回 chrome://extensions 重新加载才生效，
+// 用户看这里就知道自己跑的是不是新的（不用猜"到底有没有更新"）
+try {
+  $('#extVer').textContent = 'v' + chrome.runtime.getManifest().version;
+} catch (e) { /* 取不到就算了，不影响功能 */ }
+
 function toast(msg, cls) {
   const t = $('#toast');
   t.textContent = msg;
@@ -38,12 +44,36 @@ async function refreshStatus() {
   if (r && r.ok) {
     dot.className = 'dot on';
     $('#status').textContent = '服务在线 · v' + (r.version || '?');
+    $('#btnWake').style.display = 'none';
   } else {
     dot.className = 'dot off';
     $('#status').textContent = '服务未启动';
+    // 只有连不上时才露出「启动」—— 在线时摆一个没用的按钮只会碍事
+    $('#btnWake').style.display = '';
   }
   return !!(r && r.ok);
 }
+
+/* 一键启动：走 jiliu:// 协议，不需要用户自己去开始菜单找图标。
+ * 冷启动 2~4 秒，所以轮询等待，最长 25 秒。 */
+$('#btnWake').addEventListener('click', async () => {
+  const b = $('#btnWake');
+  b.disabled = true;
+  const old = b.textContent;
+  b.textContent = '启动中…';
+  try {
+    const r = await send({ type: 'WAKE' });
+    if (!r || !r.ok) { toast((r && r.error) || '唤起失败', 'err'); return; }
+    for (let i = 0; i < 50; i++) {
+      await new Promise((x) => setTimeout(x, 500));
+      if (await refreshStatus()) { toast('汲流已启动', 'ok'); await loadList(); return; }
+    }
+    toast('没能启动，请手动打开一次', 'err');
+  } finally {
+    b.disabled = false;
+    b.textContent = old;
+  }
+});
 
 /* ---------------- 媒体列表 ---------------- */
 
@@ -108,6 +138,43 @@ $('#list').addEventListener('click', async (ev) => {
   b.disabled = false;
   if (r.ok) toast('已加入下载：' + (r.task.filename || r.task.url).slice(0, 60), 'ok');
   else toast('失败：' + r.error, 'err');
+});
+
+/* ---------------- 解析播放页 ----------------
+ *
+ * 和上面的「本页发现的媒体」互补：
+ *   嗅探 = 播放器**已经请求过**的地址（要等广告播完、要开播放）
+ *   解析 = 直接从 HTML 里抠（不用点播放，免费影视站/短剧站大多能命中）
+ * 两条路都堵上，才谈得上"IDM 级"的覆盖率。
+ */
+$('#btnParse').addEventListener('click', async () => {
+  const tab = await activeTab();
+  if (!tab || !tab.url) return toast('没有活动标签页', 'err');
+  const btn = $('#btnParse');
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '解析中…';
+  $('#list').innerHTML = '<div class="empty">正在打开页面找播放地址…</div>';
+  try {
+    const r = await send({ type: 'PAGE_RESOLVE', payload: { url: tab.url, title: tab.title } });
+    if (!r.ok) {
+      $('#list').innerHTML = '<div class="empty">' + esc(r.error || '解析失败') +
+        (r.hint ? '<br><br>' + esc(r.hint) : '') + '</div>';
+      return toast('解析失败：' + (r.error || ''), 'err');
+    }
+    const items = (r.streams || []).map((s) => ({
+      url: s.url,
+      // hls/dash 走视频解析（yt-dlp 直链模式），整段文件走自动
+      kind: s.kind === 'hls' || s.kind === 'dash' ? 'stream' : 'video',
+      size: 0,
+      title: [s.quality || s.label, s.how].filter(Boolean).join(' · ')
+    }));
+    renderItems(items);
+    toast('找到 ' + items.length + ' 条可下载地址', 'ok');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
 });
 
 /* ---------------- 手动添加 ---------------- */
@@ -185,6 +252,31 @@ $('#btnSaveCfg').addEventListener('click', async () => {
   else toast('保存失败', 'err');
 });
 
+/* ---------------- 页面组件 ---------------- */
+
+/** 两个开关立即生效：content script 监听 storage 变化，不用刷新页面。 */
+async function setFeat(key, el) {
+  await send({ type: 'SET_CFG', cfg: { [key]: el.checked } });
+  $('#featTag').textContent = featSummary();
+  toast(el.checked ? '已开启' : '已关闭', 'ok');
+}
+
+function featSummary() {
+  const h = $('#hotspotButton').checked;
+  const w = $('#floatWidget').checked;
+  if (h && w) return '两个都开';
+  if (!h && !w) return '都关着';
+  return h ? '仅悬浮按钮' : '仅进度窗';
+}
+
+$('#hotspotButton').addEventListener('change', () => setFeat('hotspotButton', $('#hotspotButton')));
+$('#floatWidget').addEventListener('change', () => setFeat('floatWidget', $('#floatWidget')));
+
+$('#btnResetPos').addEventListener('click', async () => {
+  await new Promise((r) => chrome.storage.local.remove(['hotspot_pos', 'float_pos'], r));
+  toast('位置已还原', 'ok');
+});
+
 /* ---------------- 启动 ---------------- */
 
 (async function init() {
@@ -197,6 +289,9 @@ $('#btnSaveCfg').addEventListener('click', async () => {
     $('#interceptMode').value = c.cfg.interceptMode || 'smart';
     $('#icTag').textContent = MODE_TEXT[$('#interceptMode').value] || '';
     $('#skipHosts').value = (c.cfg.skipHosts || []).join('\n');
+    $('#hotspotButton').checked = c.cfg.hotspotButton !== false;
+    $('#floatWidget').checked = c.cfg.floatWidget !== false;
+    $('#featTag').textContent = featSummary();
   }
   loadList();
 })();

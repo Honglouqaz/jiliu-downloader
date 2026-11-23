@@ -189,7 +189,9 @@ def download(
         if not st or audio_only and key == "v":
             continue
         try:
-            est[key] = int(probe(st["url"], cfg).size or 0)
+            # B 站 CDN 不带 Referer 会 403；以前 probe 只带全局配置里的
+            # referer，这里恒失败 → 双流进度百分比永远是 0。
+            est[key] = int(probe(st["url"], cfg, headers=headers).size or 0)
         except Exception:  # noqa: BLE001
             est[key] = 0
     total_est = sum(est.values()) or 0

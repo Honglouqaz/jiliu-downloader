@@ -481,6 +481,8 @@ class Aria2Downloader:
         progress_cb: Optional[Callable[[Dict[str, Any]], None]] = None,
         log_cb: Optional[Callable[[str], None]] = None,
         verify_size: bool = True,
+        mirrors: Optional[List[str]] = None,
+        expected_sha256: str = "",
     ):
         self.url = url
         self.dest = pathlib.Path(dest)
@@ -492,6 +494,10 @@ class Aria2Downloader:
         self.progress_cb = progress_cb
         self.log_cb = log_cb
         self.verify_size = verify_size
+        # aria2 原生支持多 URI（同一文件的其他来源）与 --checksum，
+        # 这两样交给它比自己再实现一遍更稳。
+        self.mirrors = [m for m in (mirrors or []) if m and m != url]
+        self.expected_sha256 = (expected_sha256 or "").strip().lower()
 
         self.gid: Optional[str] = None
         self._last: Dict[str, Any] = {}
@@ -713,7 +719,13 @@ class Aria2Downloader:
             if self.headers.get("Referer"):
                 options["referer"] = self.headers["Referer"]
             if self.speed_limit:
-                options["max-download-limit"] = self.speed_limit
+                # aria2 RPC 的选项值一律是字符串，传 int 会被拒绝 ——
+                # 那时限速对 aria2 后端就是静默失效。
+                options["max-download-limit"] = str(self.speed_limit)
+            # 用户给了预期哈希就交给 aria2 自己校验：它会在完成后比对，
+            # 不符直接判失败，比下完再由上层重算一遍更快也更准
+            if self.expected_sha256 and len(self.expected_sha256) == 64:
+                options["checksum"] = f"sha-256={self.expected_sha256}"
 
             if pinfo.engine == "aria2" and pinfo.p2p:
                 # BT 是多文件，`out` 会强行套一个统一文件名，必须去掉；
@@ -742,8 +754,10 @@ class Aria2Downloader:
                 # BT 的总大小要等元数据到手才知道，这里先不校验
                 self.verify_size = False
             else:
-                self.gid = self.client.add_uri([self.url], options)
-                self._log(f"已交给 aria2，gid={self.gid}")
+                uris = [self.url] + self.mirrors
+                self.gid = self.client.add_uri(uris, options)
+                self._log(f"已交给 aria2，gid={self.gid}"
+                          + (f"，备用源 {len(self.mirrors)} 个" if self.mirrors else ""))
 
             while True:
                 time.sleep(0.4)

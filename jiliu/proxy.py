@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 import socket
 import time
+import ipaddress
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -61,6 +62,31 @@ class ProxyInfo:
 # --------------------------------------------------------------------------
 # URL / 域名
 # --------------------------------------------------------------------------
+
+def is_local_host(host: str) -> bool:
+    """这台机器自己 / 局域网里的地址。
+
+    这些地址**永远不该走代理**：代理客户端通常拒绝连本地端口，
+    表现是 ConnectionRefused，看起来像「站点挂了」或「代理配错了」，
+    实际只是把 127.0.0.1 也甩给了代理。主人的本机 mock 服务、
+    局域网 NAS 都在这一类。
+    """
+    h = (host or "").strip().lower().strip("[]")
+    if not h:
+        return False
+    if h in ("localhost", "localhost.localdomain", "::1", "0.0.0.0"):
+        return True
+    if h.endswith(".local") or h.endswith(".lan") or h.endswith(".localhost"):
+        return True
+    # 不带点的主机名（http://nas/xxx）几乎一定是内网机器
+    if "." not in h and ":" not in h:
+        return True
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    return bool(ip.is_loopback or ip.is_private or ip.is_link_local)
+
 
 def host_of(url: str) -> str:
     """从 URL 里取主机名，去掉端口。"""
@@ -344,6 +370,10 @@ def select(cfg: Dict[str, Any], url: str = "") -> str:
     mode = (cfg.get("proxy_mode") or "system").strip().lower()
     if mode in ("off", "none", "direct"):
         return ""
+    # 本机与内网地址一律直连 —— 代理连不上它们，只会换来一个误导性的
+    # ConnectionRefused（看着像站点挂了）
+    if url and is_local_host(host_of(url)):
+        return ""
 
     # 国内外分流：国内站默认直连，套代理反而更慢
     if url:
@@ -354,7 +384,15 @@ def select(cfg: Dict[str, Any], url: str = "") -> str:
             return ""
 
     if mode == "manual":
-        return sanitize(cfg.get("proxy") or "")
+        raw = sanitize(cfg.get("proxy") or "")
+        user = str(cfg.get("proxy_user") or "")
+        pwd = str(cfg.get("proxy_pass") or "")
+        if raw and user and "@" not in raw.split("://", 1)[-1]:
+            # 带认证的代理以前配了等于没配：user/pass 两个键从未被使用
+            scheme, _, rest = raw.partition("://")
+            return (f"{scheme}://{urllib.parse.quote(user, safe='')}:"
+                    f"{urllib.parse.quote(pwd, safe='')}@{rest}")
+        return raw
 
     if mode == "system":
         host = host_of(url) if url else ""

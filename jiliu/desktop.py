@@ -202,7 +202,17 @@ def run(cfg: Dict[str, Any], *, port: Optional[int] = None,
 
 
 def _shutdown(tm: Any, httpd: Any) -> None:
-    """收干净：先停任务（会写盘），再停服务。"""
+    """收干净：先停任务（会写盘），再停服务。
+
+    还要把 runtime.json 删掉 —— atexit 在进程被强杀（任务管理器、
+    崩溃）时不会执行，残留的端口记录会让下一次协议唤起多等一个
+    ping 超时。正常关闭这条路径必须自己收。
+    """
+    try:
+        from . import urltake
+        urltake.clear_runtime(os.getpid())
+    except Exception:      # noqa: BLE001
+        pass
     try:
         tm.shutdown()
     except Exception:  # noqa: BLE001

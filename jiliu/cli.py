@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import sys
 import time
@@ -98,12 +99,32 @@ class LineProgress:
 # 子命令
 # --------------------------------------------------------------------------
 
+def _ensure_protocol(cfg) -> None:
+    """启动时保证 jiliu:// 协议已注册。
+
+    失败一律不阻断启动：协议唤起是「有更好」的能力，
+    注册表被安全软件拦掉时，软件本身还得能正常用。
+
+    测试里设 JILIU_NO_PROTOCOL_REG=1 跳过 —— 否则跑一遍测试
+    会把开发机的协议关联改掉。
+    """
+    if (os.environ.get("JILIU_NO_PROTOCOL_REG") or "").strip().lower() in ("1", "true", "yes"):
+        return
+    try:
+        from . import urltake
+        urltake.refresh_if_registered()     # exe 挪过目录就先改正旧路径
+        urltake.ensure_registered(cfg)
+    except Exception:      # noqa: BLE001
+        pass
+
+
 def cmd_serve(args) -> int:
     from . import server
 
     cfg = _config.load()
     if args.port:
         cfg["port"] = args.port
+    _ensure_protocol(cfg)
     # serve 的定位是「显式要一个面板服务」。默认入口已经是 gui（桌面窗口），
     # 所以这里不再自动开浏览器 —— 想开就显式 --open-browser。
     open_browser = bool(args.open_browser)
@@ -119,6 +140,11 @@ def cmd_serve(args) -> int:
         print("\n  正在停止…")
         mgr.shutdown()
         httpd.shutdown()
+        try:
+            from . import urltake
+            urltake.clear_runtime(os.getpid())
+        except Exception:      # noqa: BLE001
+            pass
     return 0
 
 
@@ -127,6 +153,7 @@ def cmd_gui(args) -> int:
     cfg = _config.load()
     if getattr(args, "port", None):
         cfg["port"] = args.port
+    _ensure_protocol(cfg)
     mode = (cfg.get("window_mode") or "auto").strip().lower()
 
     # 明确要求浏览器，或者这台机器开不了原生窗口 —— 退回 serve。

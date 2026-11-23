@@ -15,8 +15,9 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
-from . import (backends, config as _config, edition, engine, layout, naming,
-               notify, protocols, resource, schedule, video)
+from . import (atomicio, backends, channels, config as _config, edition, engine,
+               finish, layout, live as live_rec, naming, notify, plugins,
+               presets, protocols, queues, resource, schedule, video)
 from .engine import human_size, unique_path
 from .task import RESUMABLE, Task
 
@@ -52,12 +53,26 @@ class TaskManager:
         self._threads: Dict[str, threading.Thread] = {}
         self._stopping = False
         self._listeners: List[Callable[[str, Task], None]] = []
+        # 队列轮转游标（见 _pick_next）
+        self._rr = 0
+        # 批量导入时临时「按住」新建的任务（见 import_tasks）：
+        # 调度线程是独立进程内线程，靠建完再改状态有竞态 —— 它可能已经把
+        # 任务抓去跑了。所以在 _new 里就按这个开关决定初始状态。
+        self._hold_new = False
         # 视频防风控：host -> 该站下一次允许的起跑时刻（monotonic）
         self._video_gate_lock = threading.Lock()
         self._video_next_start: Dict[str, float] = {}
 
         if autoload:
             self._load()
+
+        # 首次运行把默认队列写进配置，设置页才有的显示
+        if not self.cfg.get("queues"):
+            self.cfg["queues"] = queues.normalize(self.cfg)
+            try:
+                _config.save(self.cfg)
+            except Exception:
+                pass
 
         self._dispatcher = threading.Thread(target=self._dispatch_loop, daemon=True, name="jiliu-dispatch")
         self._dispatcher.start()
@@ -84,9 +99,12 @@ class TaskManager:
         p = _config.TASKS_PATH
         if not p.exists():
             return
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        # 读失败不再静默返回空表：atomicio 会先回退 .bak，再不行留档报错，
+        # 避免"一次损坏 = 任务全消失且没有任何线索"。
+        data = atomicio.read_json(p, default=None)
+        if not isinstance(data, dict):
+            if data is not None:
+                atomicio.warn("tasks.json 顶层不是对象，按空任务表启动")
             return
         for d in data.get("tasks", []):
             try:
@@ -112,12 +130,12 @@ class TaskManager:
                 ],
             }
         try:
-            _config.HOME.mkdir(parents=True, exist_ok=True)
-            tmp = pathlib.Path(str(_config.TASKS_PATH) + ".tmp")
-            tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
-            tmp.replace(_config.TASKS_PATH)
-        except Exception:
-            pass
+            # atomicio 按路径加锁 + 唯一临时名 + fsync，并发 save 不会
+            # 交错写同一个 tmp（以前固定用 tasks.json.tmp，两个线程能写坏）。
+            atomicio.write_json(_config.TASKS_PATH, payload, indent=1)
+        except Exception as exc:  # noqa: BLE001
+            # 以前这里是 pass —— 磁盘满/权限问题时用户以为存上了
+            atomicio.warn(f"任务表保存失败：{type(exc).__name__}: {exc}")
 
     # ------------------------------------------------------------------
     # 查询
@@ -150,6 +168,8 @@ class TaskManager:
                 "total_speed": total_speed,
                 "total_speed_text": (human_size(total_speed) + "/s") if total_speed else "-",
                 "max_concurrent": int(self.cfg.get("max_concurrent", MAX_CONCURRENT_DEFAULT)),
+                "queues": queues.summary(self.cfg, list(self._tasks.values())),
+                "queue_slots": queues.total_slots(self.cfg),
             }
 
     # ------------------------------------------------------------------
@@ -158,12 +178,80 @@ class TaskManager:
 
     def _new(self, task: Task) -> Task:
         with self._lock:
+            if self._hold_new and task.status == "queued":
+                task.status = "paused"
+                task.add_log("导入后保持暂停，确认无误再开始")
             self._tasks[task.id] = task
             self._order.append(task.id)
             self._cv.notify_all()
         self._notify("created", task)
-        self.save()
+        # 批量导入时由 import_tasks 统一落一次盘：300 条链接以前 =
+        # 300 次全量序列化 + 写盘（O(n²) IO），导入大清单能卡十几秒。
+        if not getattr(self, "_suspend_save", False):
+            self.save()
         return task
+
+    # ------------------------------------------------------------------
+    # 插件与站点预设（建任务前的「外部意见」）
+    # ------------------------------------------------------------------
+
+    def _apply_plugin(self, url: str, filename: str,
+                      headers: Optional[Dict[str, str]],
+                      meta: Optional[Dict[str, Any]]):
+        """先问插件：这条链接它认不认。
+
+        认领就返回改写后的 (url, filename, headers, meta, extras)，
+        extras 是插件给出的「额外产物」（比如一个页面里拆出的多个文件）。
+        没插件认领就原样返回 —— 插件永远不该让普通链接下不了。
+        """
+        m = dict(meta or {})
+        if m.get("plugin_done"):
+            return url, filename, headers, m, []
+        try:
+            hit = plugins.resolve(url, self.cfg)
+        except Exception:  # noqa: BLE001
+            return url, filename, headers, m, []
+        if not hit:
+            return url, filename, headers, m, []
+
+        ph = dict((hit.get("meta") or {}).get("headers") or {})
+        merged = {**ph, **{k: v for k, v in (headers or {}).items() if v}} or None
+        m.update({k: v for k, v in (hit.get("meta") or {}).items() if k != "headers"})
+        m["plugin"] = hit.get("plugin_name") or hit.get("plugin")
+        m["plugin_done"] = True
+        if hit.get("mirrors"):
+            m["mirrors"] = list(hit["mirrors"]) + list(m.get("mirrors") or [])
+        if hit.get("note"):
+            m["plugin_note"] = hit["note"]
+        return (hit["url"], filename or hit.get("filename") or "",
+                merged, m, list(hit.get("tasks") or []))
+
+    def _create_plugin_extras(self, extras: List[Dict[str, Any]],
+                             queue: str = "") -> List[str]:
+        """插件给的多个产物，逐个建任务。单个失败不影响其他。"""
+        made: List[str] = []
+        for ex in extras:
+            u = str(ex.get("url") or "").strip()
+            if not u:
+                continue
+            try:
+                if str(ex.get("kind") or "").lower() == "video":
+                    t = self.create_video(u, dest_dir=str(ex.get("dest_dir") or ""),
+                                          title=str(ex.get("filename") or ""),
+                                          meta={"plugin_done": True},
+                                          queue=queue)
+                else:
+                    t = self.create_http(
+                        u, filename=str(ex.get("filename") or ""),
+                        dest_dir=str(ex.get("dest_dir") or ""),
+                        threads=int(ex.get("threads") or 0) or None,
+                        meta={"plugin_done": True, **dict(ex.get("meta") or {})},
+                        headers=dict(ex.get("headers") or {}) or None,
+                        auto_classify=False, queue=queue)
+                made.append(t.id)
+            except Exception:  # noqa: BLE001
+                continue
+        return made
 
     def create_http(
         self,
@@ -180,6 +268,7 @@ class TaskManager:
         expected_sha256: str = "",
         auto_classify: bool = True,
         headers: Optional[Dict[str, str]] = None,
+        queue: str = "",
     ) -> Task:
         """建一个下载任务。
 
@@ -195,6 +284,13 @@ class TaskManager:
         g = edition.gate(url, self.cfg)
         if not g["allowed"]:
             raise TaskError(g["reason"])
+
+        # 插件优先：认出这条链接的插件可以直接给出直链/文件名/请求头
+        url, filename, headers, plugin_meta, extras = self._apply_plugin(
+            url, filename, headers, meta)
+        meta = plugin_meta
+        if extras:
+            self._create_plugin_extras(extras, queue)
 
         d = pathlib.Path(dest_dir).expanduser() if dest_dir else _config.download_dir(self.cfg)
         m = dict(meta or {})
@@ -259,6 +355,60 @@ class TaskManager:
             verify_hash=bool(verify_hash),
             expected_sha256=expected_sha256,
             meta=m,
+            queue=queues.resolve(self.cfg, queue or queues.DEFAULT_ID),
+        )
+        if filename:
+            t.dest = str(d / filename)
+        return self._new(t)
+
+    def create_live(
+        self,
+        url: str,
+        *,
+        minutes: float = 0,
+        dest_dir: str = "",
+        filename: str = "",
+        queue: str = "",
+    ) -> Task:
+        """建一个直播录制任务。
+
+        不必先探测是不是直播 —— 实际开录时会再判一次，判成点播就退回
+        普通视频流程（见 _maybe_live）。
+        """
+        base = pathlib.Path(dest_dir).expanduser() if dest_dir else _config.download_dir(self.cfg)
+        d = layout.ensure(base, "video", self.cfg, explicit=bool(dest_dir))
+        m = {
+            "live": True,
+            "live_minutes": float(minutes or 0),
+            # 用户明确要录直播，就不在开录时反复判定了
+            "no_live": False,
+            "resource": {
+                "category": "video",
+                "label": "直播录制",
+                "engine": "live",
+                "filetype": "HLS 直播",
+                "concurrency": 1,
+                "chunk_size": 0,
+                "verify_hash": False,
+                "protocol": "http",
+                "note": "持续跟进 m3u8 新分片，停止时拼接成片",
+            },
+        }
+        t = Task(
+            url=url,
+            kind="video",
+            backend="live",
+            threads=1,
+            dest_dir=str(d),
+            format="",
+            filename=filename or "",
+            title=filename or "",
+            category="video",
+            meta=m,
+            queue=queues.resolve(
+                self.cfg,
+                queue or ("video" if "video" in queues.ids(self.cfg)
+                          else queues.DEFAULT_ID)),
         )
         if filename:
             t.dest = str(d / filename)
@@ -313,6 +463,8 @@ class TaskManager:
         group_title: str = "",
         audio_only: bool = False,
         subs_only: bool = False,
+        queue: str = "",
+        danmaku: Optional[bool] = None,
     ) -> Task:
         """建一个视频/合集任务。
 
@@ -325,6 +477,36 @@ class TaskManager:
         if not g["allowed"]:
             raise TaskError(g["reason"])
 
+        # 站点预设：同一个站下过十次，第十一次不该再手选一遍画质
+        pre = presets.apply(self.cfg, url, {
+            "qn": int((meta or {}).get("qn") or 0) or None,
+            "codec": str((meta or {}).get("codec") or "") or None,
+            "container": str((meta or {}).get("container") or "") or None,
+        })
+        pm = dict(meta or {})
+        if pre.get("applied"):
+            po = pre.get("opts") or {}
+            pm["preset"] = pre.get("source")
+            if not fmt and po.get("container"):
+                fmt = str(po["container"])
+            for k in ("qn", "codec", "codec_prefer"):
+                if po.get(k) and not pm.get(k):
+                    pm[k] = po[k]
+            if po.get("sub_langs") and not pm.get("sub_langs"):
+                pm["sub_langs"] = po["sub_langs"]
+            if po.get("audio_only") and not audio_only:
+                audio_only = True
+            if po.get("danmaku") and danmaku is None:
+                danmaku = True
+
+        # 插件：认领了就按它给的直链/文件名走
+        url, _pf, _ph, pm, _px = self._apply_plugin(url, "", None, pm)
+        if _pf and not title:
+            title = _pf
+        if _ph:
+            pm["headers"] = {**dict(pm.get("headers") or {}), **_ph}
+        meta = pm
+
         base = pathlib.Path(dest_dir).expanduser() if dest_dir else _config.download_dir(self.cfg)
         m = dict(meta or {})
         m.update({
@@ -333,6 +515,8 @@ class TaskManager:
             "group_title": (group_title or "").strip(),
             "audio_only": bool(audio_only or self.cfg.get("audio_only")),
             "subs_only": bool(subs_only),
+            # None = 跟随全局设置；True/False = 这个任务自己说了算
+            "danmaku": (None if danmaku is None else bool(danmaku)),
             "resource": {
                 "category": "playlist" if playlist else "video",
                 "label": "合集 / 播放列表" if playlist else (
@@ -364,6 +548,12 @@ class TaskManager:
             title=title or group_title or "",
             category="playlist" if playlist else "video",
             meta=m,
+            # 视频默认进「视频」队列：大文件不该挤掉小文件。
+            # 没有这条队列（用户删了）就落回 default。
+            queue=queues.resolve(
+                self.cfg,
+                queue or ("video" if "video" in queues.ids(self.cfg)
+                          else queues.DEFAULT_ID)),
         )
         return self._new(t)
 
@@ -372,54 +562,88 @@ class TaskManager:
     # ------------------------------------------------------------------
 
     def pause(self, tid: str) -> bool:
-        t = self.get(tid)
-        if not t or t.status != "running":
-            return False
-        live = self._live.get(tid)
-        if live is not None and hasattr(live, "pause"):
-            try:
-                live.pause()
-            except Exception:
-                pass
-        t.status = "paused"
-        t.add_log("已暂停")
-        self._notify("paused", t)
-        self.save()
-        return True
+        with self._lock:
+            t = self._tasks.get(tid)
+            if not t or t.status != "running":
+                return False
+            live = self._live.get(tid)
+            # native/aria2/录制器实现了 pause()：原地挂起，线程不退出。
+            # 视频任务拿的是 cancel_event（yt-dlp 子进程），只能先停进程，
+            # 继续时靠 yt-dlp 自己的断点续传 —— 以前这里只改状态标签，
+            # 子进程照跑、带宽照占，属于"假暂停"。
+            if live is not None:
+                try:
+                    if hasattr(live, "pause"):
+                        live.pause()
+                    elif hasattr(live, "set"):
+                        live.set()
+                        t.add_log("已暂停（子进程已停止，继续时断点续传）")
+                except Exception as exc:  # noqa: BLE001
+                    t.add_log(f"暂停时引擎报错（继续按状态处理）：{exc}")
+            t.status = "paused"
+            t.add_log("已暂停")
+            self._notify("paused", t)
+            self.save()
+            return True
 
     def resume(self, tid: str) -> bool:
+        wait_thread: Optional[threading.Thread] = None
         with self._lock:
             t = self._tasks.get(tid)
             if not t or t.status not in RESUMABLE:
                 return False
+            live = self._live.get(tid)
+            th = self._threads.get(tid)
+            # 线程还活着 = 引擎把暂停做成了"原地阻塞"。此时必须让同一个
+            # 引擎对象继续，**不能重新入队**：旧线程还占着 .part 句柄，
+            # Windows 上第二次跑完换名会 PermissionError，用户看到的是
+            # "暂停过的任务下到 100% 又从头来"。
+            if th is not None and th.is_alive() and live is not None and hasattr(live, "resume"):
+                try:
+                    live.resume()
+                    t.status = "running"
+                    t.error = ""
+                    t.add_log("已继续")
+                    self._notify("resumed", t)
+                    self.save()
+                    return True
+                except Exception as exc:  # noqa: BLE001
+                    t.add_log(f"引擎继续失败，重新排队：{exc}")
+            elif th is not None and th.is_alive():
+                # 视频任务：暂停时已经 set 了取消事件，等旧线程收尾再入队，
+                # 否则两个 yt-dlp 会同时写同一个输出目录。
+                wait_thread = th
             t.status = "queued"
             t.error = ""
             t.add_log("已加入队列（续传）")
             self._cv.notify_all()
+        if wait_thread is not None:
+            wait_thread.join(timeout=8)
         self._notify("queued", t)
         self.save()
         return True
 
     def cancel(self, tid: str) -> bool:
-        t = self.get(tid)
-        if not t or t.status in ("done",):
-            return False
-        live = self._live.get(tid)
-        if live is not None:
-            try:
-                if hasattr(live, "cancel"):
-                    live.cancel()
-                elif hasattr(live, "set"):
-                    live.set()
-            except Exception:
-                pass
-        t.status = "cancelled"
-        t.speed = 0
-        t.eta = None
-        t.add_log("已取消")
-        self._notify("cancelled", t)
-        self.save()
-        return True
+        with self._lock:
+            t = self._tasks.get(tid)
+            if not t or t.status in ("done",):
+                return False
+            live = self._live.get(tid)
+            if live is not None:
+                try:
+                    if hasattr(live, "cancel"):
+                        live.cancel()
+                    elif hasattr(live, "set"):
+                        live.set()
+                except Exception:  # noqa: BLE001
+                    pass
+            t.status = "cancelled"
+            t.speed = 0
+            t.eta = None
+            t.add_log("已取消")
+            self._notify("cancelled", t)
+            self.save()
+            return True
 
     def remove(self, tid: str) -> bool:
         self.cancel(tid)
@@ -442,6 +666,96 @@ class TaskManager:
                 self._order.remove(i)
         self.save()
         return len(victims)
+
+    # ------------------------------------------------------------------
+    # 导入导出（见 jiliu/transfer.py）
+    # ------------------------------------------------------------------
+
+    def export_tasks(self, ids: Optional[List[str]] = None, fmt: str = "json") -> Dict[str, Any]:
+        """把任务导出成文本。ids 为空 = 全部。"""
+        from . import transfer
+
+        with self._lock:
+            rows = [self._tasks[i] for i in (ids or self._order)
+                    if self._tasks.get(i)]
+        return transfer.export(rows, fmt, cfg=self.cfg)
+
+    def import_tasks(self, text: str, *, fmt: str = "auto", queue: str = "",
+                     dest_dir: str = "", start: bool = False) -> Dict[str, Any]:
+        """把导出的文本变回任务。
+
+        导入一律**不联网探测**（auto_classify=False）：几百条链接挨个
+        探一遍，既慢又容易被对面当成扫描。探测留到真正开下时再做。
+        start=False（默认）时任务以暂停态落库，用户能在界面上先挑一挑。
+        """
+        from . import transfer
+
+        parsed = transfer.import_text(text, fmt)
+        if not parsed.get("ok"):
+            return {**parsed, "created": 0, "ids": [], "errors": []}
+        created: List[str] = []
+        errors: List[str] = []
+        with self._lock:
+            self._hold_new = not start
+            self._suspend_save = True
+        try:
+            return self._import_rows(parsed, created, errors, queue, dest_dir, start)
+        finally:
+            with self._lock:
+                self._hold_new = False
+                self._suspend_save = False
+            self.save()
+
+    def _import_rows(self, parsed, created: List[str], errors: List[str],
+                     queue: str, dest_dir: str, start: bool) -> Dict[str, Any]:
+        for row in parsed["tasks"]:
+            url = str(row.get("url") or "").strip()
+            try:
+                if row.get("kind") == "video":
+                    t = self.create_video(
+                        url,
+                        fmt=str(row.get("format") or ""),
+                        dest_dir=dest_dir or str(row.get("dest_dir") or ""),
+                        title=str(row.get("filename") or ""),
+                        meta=dict(row.get("meta") or {}),
+                        playlist=bool((row.get("meta") or {}).get("playlist")),
+                        items=str((row.get("meta") or {}).get("playlist_items") or ""),
+                        audio_only=bool((row.get("meta") or {}).get("audio_only")),
+                        subs_only=bool((row.get("meta") or {}).get("subs_only")),
+                        queue=queue or str(row.get("queue") or ""),
+                    )
+                else:
+                    t = self.create_http(
+                        url,
+                        filename=str(row.get("filename") or ""),
+                        dest_dir=dest_dir or str(row.get("dest_dir") or ""),
+                        threads=int(row.get("threads") or 0) or None,
+                        category=str(row.get("category") or ""),
+                        chunk_size=int(row.get("chunk_size") or 0),
+                        verify_hash=bool(row.get("verify_hash")),
+                        expected_sha256=str(row.get("expected_sha256") or ""),
+                        auto_classify=False,
+                        headers=dict((row.get("meta") or {}).get("headers") or {}) or None,
+                        meta={k: v for k, v in (row.get("meta") or {}).items()
+                              if k != "headers"},
+                        queue=queue or str(row.get("queue") or ""),
+                    )
+                created.append(t.id)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{url}: {type(exc).__name__}: {exc}")
+        if not start:
+            # 先把它们按住：导入 300 条链接立刻全速开跑，多半不是用户想要的。
+            # 停在 paused，界面上点「继续」就开。
+            with self._lock:
+                for tid in created:
+                    t = self._tasks.get(tid)
+                    if t and t.status == "queued":
+                        t.status = "paused"
+                        t.add_log("导入后保持暂停，确认无误再开始")
+            self.save()
+        return {"ok": True, "fmt": parsed["fmt"], "count": parsed["count"],
+                "created": len(created), "ids": created, "errors": errors,
+                "skipped": parsed.get("skipped", 0)}
 
     def set_priority(self, tid: str, value: Any = None, top: bool = False) -> Optional[Task]:
         """调整排队任务的优先级。
@@ -540,17 +854,79 @@ class TaskManager:
     # ------------------------------------------------------------------
 
     def _pick_next(self) -> Optional[Task]:
-        """从排队任务里挑下一个：优先级高的先跑，同级按创建顺序。"""
-        best_key = None
-        nxt = None
-        for pos, i in enumerate(self._order):
-            t = self._tasks.get(i)
-            if t and t.status == "queued":
+        """按队列轮转挑下一个任务。
+
+        规则（缺一条都会出现「某类任务永远排不上」）：
+          1. 队列之间轮转，不按固定顺序 —— 否则高优先级队列一直有新任务时，
+             低优先级队列会被饿死。
+          2. 每条队列有自己的并发配额，满了就跳过，去看下一条。
+          3. 队列内部按任务 priority 降序，同级按创建顺序。
+          4. 任务指向已删除的队列时归到 default，不然它会永远 queued。
+        """
+        qs = queues.normalize(self.cfg)
+        if not qs:
+            return None
+        qmap = {q["id"]: q for q in qs}
+        valid = set(qmap)
+
+        def q_of(t: Task) -> str:
+            qid = t.queue or queues.DEFAULT_ID
+            return qid if qid in valid else queues.DEFAULT_ID
+
+        running: Dict[str, int] = {}
+        for t in self._tasks.values():
+            if t.status == "running":
+                qid = q_of(t)
+                running[qid] = running.get(qid, 0) + 1
+
+        order = [q["id"] for q in qs]
+        start = self._rr % len(order)
+        order = order[start:] + order[:start]
+
+        for qid in order:
+            q = qmap.get(qid) or {}
+            cap = int(q.get("max_concurrent") or 1)
+            if running.get(qid, 0) >= cap:
+                continue
+            best_key = None
+            picked: Optional[Task] = None
+            for pos, i in enumerate(self._order):
+                t = self._tasks.get(i)
+                if not t or t.status != "queued":
+                    continue
+                if q_of(t) != qid:
+                    continue
                 key = (-t.priority, pos)
                 if best_key is None or key < best_key:
                     best_key = key
-                    nxt = t
-        return nxt
+                    picked = t
+            if picked is not None:
+                # 下次从这条队列的下一条开始，保证轮转
+                self._rr = (order.index(qid) + start + 1) % len(qs)
+                return picked
+        return None
+
+    def queue_summary(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            return queues.summary(self.cfg, list(self._tasks.values()))
+
+    def set_task_queue(self, tid: str, qid: str) -> Optional[Task]:
+        """把任务移到另一条队列。运行中不搬（会打断已建立的连接），
+        排队中的立刻生效；已完成/出错的只改归属标签。"""
+        with self._lock:
+            t = self._tasks.get(tid)
+            if t is None:
+                return None
+            qid = queues.resolve(self.cfg, qid)
+            old = t.queue or queues.DEFAULT_ID
+            if old == qid:
+                return t
+            t.queue = qid
+            t.add_log(f"队列：{old} → {qid}")
+            self._cv.notify_all()
+        self._notify("queued", t)
+        self.save()
+        return t
 
     def _dispatch_loop(self) -> None:
         while not self._stopping:
@@ -560,9 +936,10 @@ class TaskManager:
                     self._cv.wait(timeout=2.0)
                 continue
             with self._lock:
-                max_c = int(self.cfg.get("max_concurrent", MAX_CONCURRENT_DEFAULT))
+                # 0 = 不设全局天花板，并发由各队列的配额决定
+                max_c = int(self.cfg.get("max_concurrent", MAX_CONCURRENT_DEFAULT) or 0)
                 active = sum(1 for t in self._tasks.values() if t.status == "running")
-                nxt = self._pick_next() if active < max_c else None
+                nxt = self._pick_next() if (max_c <= 0 or active < max_c) else None
                 if nxt is None:
                     self._cv.wait(timeout=2.0)
                     continue
@@ -742,6 +1119,14 @@ class TaskManager:
             seg = snap.get("segments_created") or snap.get("segments_total")
             if seg:
                 t.meta["segments"] = seg
+            if snap.get("live"):
+                # 直播没有总大小，进度条只能表达「已录多少字节」，
+                # 界面上改用分片计数和已录时长
+                t.meta["live"] = True
+                if snap.get("segments") is not None:
+                    t.meta["segments"] = int(snap["segments"])
+                if snap.get("elapsed") is not None:
+                    t.meta["live_elapsed"] = float(snap["elapsed"])
             if snap.get("p2p"):
                 # BT 的「做种数 / 连接数」比速度更能解释「为什么这么慢」，
                 # 单拎出来给界面显示
@@ -760,13 +1145,24 @@ class TaskManager:
         t = self.get(tid)
         if t is None:
             return
+        # 取消竞态：dispatcher 刚把任务翻成 running、线程还没拿到 live 对象时，
+        # 用户点了取消。这里再看一眼状态，别让"已取消"的任务照常下完。
+        with self._lock:
+            if t.status in ("cancelled", "paused"):
+                t.add_log("起跑前已被取消/暂停，未启动")
+                self._threads.pop(tid, None)
+                self._cv.notify_all()
+                return
         t.add_log(f"开始下载（{t.backend or self.cfg.get('backend', 'auto')} / {t.threads} 线程）")
         self._notify("started", t)
         if self.cfg.get("prevent_sleep", True):
             notify.prevent_sleep(True)
 
         try:
-            if t.kind == "video":
+            # 直播优先：m3u8 若判定为直播，交给录制器，不进普通下载路径
+            if self._maybe_live(t):
+                pass
+            elif t.kind == "video":
                 self._run_video(t)
             else:
                 self._run_http(t)
@@ -797,10 +1193,34 @@ class TaskManager:
             if t.status == "done":
                 if self.cfg.get("notify_enabled", True):
                     notify.notify("汲流 · 下载完成", t.filename or t.url)
+                # 远程渠道（Webhook）异步发，不占下载线程
+                try:
+                    channels.notify(self.cfg, "汲流 · 下载完成",
+                                    t.filename or t.url, "done")
+                except Exception:
+                    pass
                 notify.run_after_command(self.cfg, t.dest)
                 # 合集产物是目录，m3u 要等所有条目落地后再写（见 _run_video）
             elif t.status == "error" and self.cfg.get("notify_enabled", True):
                 notify.notify("汲流 · 下载失败", f"{t.filename or t.url}：{t.error or ''}")
+                try:
+                    channels.notify(self.cfg, "汲流 · 下载失败",
+                                    f"{t.filename or t.url}：{t.error or ''}",
+                                    "error")
+                except Exception:
+                    pass
+        except Exception:  # noqa: BLE001
+            pass
+        # 全部任务结束后可能要关机/休眠（见 finish.py）
+        try:
+            finish.maybe_fire(self.cfg, self)
+        except Exception:
+            pass
+        # 插件事件：做完/失败都广播一次，插件可据此做后续动作
+        try:
+            ev = {"done": "done", "error": "error"}.get(t.status)
+            if ev:
+                plugins.emit(ev, t, self.cfg)
         except Exception:  # noqa: BLE001
             pass
 
@@ -850,13 +1270,27 @@ class TaskManager:
             if policy in ("rename", "new", ""):
                 target = unique_path(target)
         dest = target
+        # 并发保护：同一目标路径已经有任务在跑时，**最终文件还不存在**，
+        # target.exists() 查不出来；两个 RangeDownloader 会打开同一个 .part
+        # 和 sidecar，区间池互不知晓 → 互相覆盖。这里改走 (1) 后缀。
+        with self._lock:
+            busy = {
+                str(_p.Path(o.dest))
+                for o in self._tasks.values()
+                if o.id != t.id and o.status in ("running", "queued") and o.dest
+            }
+        if str(dest) in busy:
+            dest = unique_path(dest)
+            t.add_log(f"同一路径已有任务在跑，改存为 {dest.name}")
         t.dest = str(dest)
         t.filename = dest.name
 
         # 任务专属请求头（网盘解析产物有时要带 Cookie/Referer 才给下）
         task_headers = dict((t.meta or {}).get("headers") or {})
         # 单任务限速：0 表示跟随全局（传 None 才会落回 cfg）
-        per_speed = int((t.meta or {}).get("speed_limit") or 0) or None
+        # 限速优先级：任务自己的设置 > 所属队列的限速 > 全局
+        per_speed = (int((t.meta or {}).get("speed_limit") or 0)
+                     or queues.speed_limit_for(self.cfg, t.queue) or None)
 
         dl = backends.make_downloader(
             t.url, dest,
@@ -871,9 +1305,17 @@ class TaskManager:
             chunk_size=t.chunk_size or None,
             verify_hash=t.verify_hash,
             expected_sha256=t.expected_sha256,
+            mirrors=[m for m in ((t.meta or {}).get("mirrors") or []) if m],
         )
         t.backend = _engine_name(dl)
         self._live[t.id] = dl
+
+        # 竞态二道闸：probe/建下载器这段时间用户可能已经取消，
+        # 不能因为 live 刚就位就照常开跑。
+        with self._lock:
+            if t.status == "cancelled":
+                t.add_log("任务在下载器启动前被取消")
+                return
 
         res = dl.run()
 
@@ -905,6 +1347,7 @@ class TaskManager:
                         log_cb=lambda m: t.add_log(m),
                         verify_hash=t.verify_hash,
                         expected_sha256=t.expected_sha256,
+                        mirrors=[m for m in ((t.meta or {}).get("mirrors") or []) if m],
                     )
                 except Exception as exc:  # noqa: BLE001
                     t.add_log(f"{eng} 不可用：{exc}")
@@ -1003,6 +1446,113 @@ class TaskManager:
             t.add_log(f"原生取流异常，回退 yt-dlp：{type(exc).__name__}: {exc}")
             return None
 
+    def _live_name(self, t: Task) -> str:
+        """给直播录制起名：站点 + 时间戳，避免每次都叫「直播录制.ts」。"""
+        host = ""
+        try:
+            host = (urlparse(t.url).hostname or "").replace("www.", "")
+        except Exception:  # noqa: BLE001
+            pass
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        base = naming.sanitize(f"{host or '直播'}_{stamp}") or f"live_{stamp}"
+        return base + ".ts"
+
+    def _maybe_live(self, t: Task) -> bool:
+        """m3u8 若是直播流，改由 LiveRecorder 持续跟进分片。
+
+        返回 True 表示已经接管（任务状态由这里写完），调用方不必再走
+        普通的下载流程。非直播/判定失败一律返回 False，交回原路径 ——
+        宁可让 yt-dlp 去试，也不能因为一次探测失败就判定任务不能下。
+        """
+        if not self.cfg.get("live_record", True):
+            return False
+        if (t.meta or {}).get("no_live"):
+            return False
+        tail = (t.url or "").split("?")[0].split("#")[0].lower()
+        if not tail.endswith((".m3u8", ".m3u")):
+            return False
+
+        info = live_rec.is_live_url(t.url, self.cfg,
+                                    headers=dict((t.meta or {}).get("headers") or {}) or None)
+        if not info.get("ok") or not info.get("live"):
+            if info.get("ok"):
+                t.add_log("m3u8 带 ENDLIST（点播），按普通视频下载")
+            else:
+                t.add_log(f"直播判定失败（{info.get('reason')}），按普通视频下载")
+            return False
+
+        d = pathlib.Path(t.dest_dir)
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+        dest = pathlib.Path(t.dest) if t.dest else unique_path(d / self._live_name(t))
+        t.dest = str(dest)
+        t.filename = dest.name
+        t.percent = 0.0
+        t.backend = "live"
+        t.meta["live"] = True
+
+        pl = info.get("playlist") or {}
+        td = pl.get("target_duration") or 0
+        t.add_log(f"检测到直播流（分片 {td or '?'}s），开始录制 → {dest.name}")
+
+        rec = live_rec.LiveRecorder(
+            t.url, dest,
+            cfg=self.cfg,
+            minutes=float((t.meta or {}).get("live_minutes")
+                          or self.cfg.get("live_minutes") or 0),
+            container="mp4" if self.cfg.get("live_remux", True) else "ts",
+            progress_cb=self._progress_factory(t),
+            log_cb=lambda m: t.add_log(m),
+            headers=dict((t.meta or {}).get("headers") or {}) or None,
+        )
+        self._live[t.id] = rec
+        res = rec.run()
+
+        if res.get("ok"):
+            t.status = "done"
+            t.percent = 100.0
+            t.dest = res.get("path") or str(dest)
+            t.filename = pathlib.Path(t.dest).name
+            t.size = int(res.get("bytes") or 0)
+            t.done = t.size
+            t.add_log(f"录制结束：{t.filename}，{int(res.get('segments') or 0)} 片"
+                      f" / {human_size(t.size)} / {res.get('seconds', 0):.1f}s")
+        elif res.get("cancelled"):
+            t.status = "cancelled"
+            t.speed = 0
+            t.add_log("已停止录制")
+        else:
+            t.status = "error"
+            t.error = str(res.get("error") or "录制失败")
+            t.add_log("录制失败: " + t.error)
+        return True
+
+    def _grab_danmaku(self, t: Task, base: pathlib.Path) -> None:
+        """视频下完后顺手抓弹幕（只对 B 站有意义）。失败只记日志，不影响任务。"""
+        from . import danmaku
+
+        fmt = self.cfg.get("danmaku_formats") or ["xml", "ass"]
+        try:
+            r = danmaku.for_video(
+                t.url, self.cfg, base,
+                formats=fmt,
+                font=str(self.cfg.get("danmaku_font") or danmaku.DEFAULT_FONT),
+                alpha=float(self.cfg.get("danmaku_alpha") or danmaku.DEFAULT_ALPHA),
+                skip_special=bool(self.cfg.get("danmaku_skip_special", True)),
+                max_items=int(self.cfg.get("danmaku_max") or 0),
+            )
+        except Exception as exc:  # noqa: BLE001
+            t.add_log(f"弹幕处理异常：{type(exc).__name__}: {exc}")
+            return
+        if r.get("ok"):
+            names = ", ".join(pathlib.Path(p).name for p in (r.get("files") or {}).values())
+            t.add_log(f"弹幕已保存（{r.get('count')} 条）：{names}")
+            t.meta["danmaku"] = {"count": r.get("count"), "files": r.get("files") or {}}
+        else:
+            t.add_log("弹幕没抓到：" + str(r.get("error") or "未知原因"))
+
     def _run_video(self, t: Task) -> None:
         ev = threading.Event()
         self._live[t.id] = ev
@@ -1057,6 +1607,9 @@ class TaskManager:
                 group_title=group,
                 audio_only=audio_only,
                 subs_only=subs_only,
+                # 任务级请求头：网页解析 / 浏览器扩展带过来的 Referer·Cookie·UA。
+                # 不给的话，防盗链 CDN 上「地址对了也 403」，用户完全无从判断。
+                headers=dict((t.meta or {}).get("headers") or {}) or None,
             )
         if res.get("ok"):
             t.status = "done"
@@ -1083,9 +1636,29 @@ class TaskManager:
                     t.size = _p.Path(t.dest).stat().st_size or t.size
                     t.done = t.size
                 t.add_log(f"完成：{t.filename}，耗时 {res.get('seconds', 0):.1f}s")
+                # B 站弹幕：任务级开关优先，否则看全局设置
+                want_dm = m.get("danmaku")
+                if want_dm is None:
+                    want_dm = bool(self.cfg.get("danmaku"))
+                is_bili = ("bilibili.com" in t.url) or ("b23.tv" in t.url)
+                if want_dm and is_bili and t.dest:
+                    try:
+                        self._grab_danmaku(t, _p.Path(t.dest).with_suffix(""))
+                    except Exception:  # noqa: BLE001
+                        pass
         elif res.get("cancelled"):
-            t.status = "cancelled"
-            t.add_log("已取消")
+            # 暂停视频任务时我们会 set 取消事件（yt-dlp 子进程必须停），
+            # 但用户意图是"继续"而不是"取消"——状态以管理器为准，
+            # 这里别把它覆盖成 cancelled。
+            with self._lock:
+                paused = t.status in ("paused", "queued")
+            if paused:
+                t.speed = 0
+                t.eta = None
+                t.add_log("已停止当前子进程，等待继续")
+            else:
+                t.status = "cancelled"
+                t.add_log("已取消")
         else:
             t.status = "error"
             t.error = str(res.get("error") or "未知错误")

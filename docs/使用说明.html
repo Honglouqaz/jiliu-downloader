@@ -566,6 +566,156 @@ python jiliu.py sites</pre>
 </section>
 
 <!-- ============================================================ -->
+<section id="webvideo">
+  <h2>网页视频解析（1.9.2）</h2>
+  <p class="lead">给一个播放页地址，把里面真正在播的那个流拿下来。不装扩展也能用。</p>
+
+  <h3>怎么用</h3>
+  <ol>
+    <li>复制<b>播放页</b>地址（不是播放器里的地址；浏览器地址栏那个就是）</li>
+    <li>点工具栏「新建任务」→ 粘进去 → 点<b>「解析播放页」</b></li>
+    <li>下面会列出找到的地址，带清晰度。点<b>「下载这条」</b>就进队列</li>
+  </ol>
+  <p>解析出来的请求头（Referer / Origin / Cookie / UA）会跟着任务一起存下来 ——
+  防盗链 CDN 认的正是这几样，少了就是「地址没错却下不动」。</p>
+
+  <h3>能认的六种形态</h3>
+  <ul>
+    <li><b>播放器变量</b>：<code>player_aaaa = {..."url":"...m3u8"}</code> ——
+        苹果CMS / 海洋CMS 系模板，免费影视站的最大族群；多清晰度（<code>4K$... #1080P$...</code>）
+        与多线路（<code>player_bbbb</code>）都会拆开列出</li>
+    <li><b>&lt;video&gt; / &lt;source&gt; / data-* 属性</b>：短剧站、老站、自建播放器</li>
+    <li><b>&lt;iframe&gt; 内嵌播放器</b>：会递归进去（默认 2 层），
+        顺带解出 <code>?url=</code> 参数里编码过的地址</li>
+    <li><b>内联脚本</b>：hls.js / dash.js 配置、<code>window.__INITIAL_STATE__</code>，
+        含 <code>https://////</code> 这类转义写法</li>
+    <li><b>og:video / JSON-LD</b>：正规站点的结构化元数据</li>
+    <li><b>流直链</b>：m3u8 / mpd / mp4 直接粘进来，会自动展开清晰度供选</li>
+  </ul>
+
+  <h3>拿不到的四类，以及为什么</h3>
+  <table>
+    <thead><tr><th>类型</th><th>为什么拿不到</th><th>还能怎么办</th></tr></thead>
+    <tbody>
+      <tr><td>DRM（Widevine / FairPlay）</td>
+          <td>分片是密文，密钥在版权方；浏览器播放本身也要许可证</td>
+          <td>没有可行办法。腾讯/爱奇艺会员正片、Netflix 都在这里</td></tr>
+      <tr><td>播放地址二次加密（<code>encrypt=1</code>）</td>
+          <td>地址由站点自己的 JS 解出，规则随版本变</td>
+          <td>用浏览器插件在播放时嗅探（IDM 也是这么干的）</td></tr>
+      <tr><td><code>blob:</code> + MSE</td>
+          <td>真实地址只存在内存里，HTML 里没有</td>
+          <td>装插件，在网络层截真实请求</td></tr>
+      <tr><td>付费 / 会员清晰度</td>
+          <td>不绕付费墙</td>
+          <td>带你自己的 Cookie，能拿到你能看的档位</td></tr>
+    </tbody>
+  </table>
+
+  <h3>为什么要带 Cookie</h3>
+  <p>很多站点游客只给 480P，登录后才有 1080P；还有些 CDN 直接校验 Cookie。
+  两种给法：设置 → 网络 → Cookie → <b>从浏览器读取</b>；
+  或者装插件，右键「用汲流下载此链接」时它会把当前会话的 Cookie 一起带过来。</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="wake">
+  <h2>应用没开着，点链接也能唤起（1.9.4）</h2>
+  <p class="lead">不需要先打开汲流。网页上点一下、或者浏览器扩展拦到下载，它会自己起来。</p>
+
+  <h3>怎么生效</h3>
+  <p>第一次启动时，汲流会在注册表里登记一个 <code>jiliu://</code> 协议（只写当前用户，
+  不弹管理员权限框）。之后这两种情况都会自动唤起：</p>
+  <ul>
+    <li><b>浏览器扩展</b>：拦截到下载 → 发现本机服务连不上 → 用 <code>jiliu://wake</code>
+        把应用拉起来 → 等它就绪 → 把完整任务（含 Cookie/Referer）补发过去</li>
+    <li><b>网页里的链接</b>：任何 <code>&lt;a href="jiliu://download?url=..."&gt;</code>
+        点下去都会交给汲流</li>
+  </ul>
+
+  <h3>为什么目录里多了个 jiliu-wake.exe</h3>
+  <p>注册表指向的是它，不是主程序。主程序是 25MB 的单文件包，Windows 每次启动
+  它都要把内容解包一遍 —— 拿主程序当协议处理器，点一次链接要等六秒多。
+  <code>jiliu-wake.exe</code> 只做三件事：读一下运行中的端口、把任务发过去、退出。
+  10MB，实测 <b>2.5 秒</b>左右。</p>
+  <p class="note">少了它也能用：汲流会退回指向主程序，功能完全一样，只是慢。
+  所以这两个文件请放在同一个目录里。</p>
+
+  <h3>三种写法</h3>
+  <table>
+    <thead><tr><th style="width:34%">写法</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>jiliu://download?url=&lt;编码后的链接&gt;</code></td>
+          <td>唤起并直接建任务。可加 <code>&amp;referer=</code>、<code>&amp;title=</code>、<code>&amp;kind=video</code></td></tr>
+      <tr><td><code>jiliu://wake</code></td>
+          <td>只唤起，不建任务。扩展用它叫醒应用，之后自己走本地 API 补投</td></tr>
+      <tr><td><code>jiliu:https://example.com/a.zip</code></td>
+          <td>冒号后直接跟原链接，最省事</td></tr>
+    </tbody>
+  </table>
+  <p class="note">链接里的 <code>?</code> 和 <code>&amp;</code> 必须 percent 编码，否则会被协议串自己的
+  query 解析吃掉后半段 —— 表现为"签名地址被截断，下载 403"。用设置页里的「试试看」
+  可以验证一条链接能不能被正确解析。</p>
+
+  <h3>为什么扩展不直接把 Cookie 塞进协议串</h3>
+  <p>协议串会被浏览器记进历史，也会落进系统的 URL 处理日志。把登录态写进去，
+  等于把 Cookie 摊在磁盘上。所以协议串只承担「叫醒」，真正的请求仍然走
+  <code>127.0.0.1</code> 的本地 API —— 那条路上敏感信息一个字节都不出内存。</p>
+
+  <h3>设置在哪</h3>
+  <p>设置 → 自动化 → <b>协议唤起（jiliu://）</b>。这里能看到当前注册状态、
+  指向的可执行文件路径、最近五次唤起的成功或失败原因，也能手动注册/取消。</p>
+
+  <h3>常见情况</h3>
+  <table>
+    <thead><tr><th style="width:30%">现象</th><th>原因与处理</th></tr></thead>
+    <tbody>
+      <tr><td>浏览器弹「是否打开汲流」</td>
+          <td>正常。勾选「记住我的选择」之后不再问</td></tr>
+      <tr><td>点了没反应</td>
+          <td>先看设置页的「最近一次唤起」。如果显示未注册，点「立即注册」；
+              如果是"不支持的链接类型"，说明协议串里带的是 <code>javascript:</code> 之类。
+              排查看 <code>data/logs/wake.log</code>，唤起器失败时会在那里留一行</td></tr>
+      <tr><td>点了链接，没有新窗口，但任务已经在列表里</td>
+          <td>正常。汲流本来就在后台跑着，唤起器把任务递给它之后就退了，
+              不会再开第二个窗口抢任务列表</td></tr>
+      <tr><td>唤起后窗口是空的，任务几秒后才出现</td>
+          <td>正常。冷启动要 3~5 秒（主程序解包 + WebView 初始化），
+              任务在服务就绪后立刻入队</td></tr>
+      <tr><td>便携版换了目录后唤起失效</td>
+          <td>注册表里还指着旧路径。启动一次汲流会自动改正；也可以手动「立即注册」</td></tr>
+      <tr><td>公司电脑不让写注册表</td>
+          <td>协议唤起用不了，但扩展直连本地 API 仍然可用 —— 前提是先手动开着汲流</td></tr>
+      <tr><td>扩展点了悬浮按钮，还是弹「请先启动汲流」</td>
+          <td>扩展没重新加载。改过的代码要回 <code>chrome://extensions</code>
+              点卡片上的刷新才会生效。点扩展图标，顶栏应显示 <b>v1.9.6</b> ——
+              看不到版本角标就说明跑的还是旧的</td></tr>
+      <tr><td>按钮不见了 / 跑到别处去了</td>
+          <td>按钮拖过之后会记住位置。想恢复默认：插件图标 →「页面组件」→
+              「还原两个组件的位置」。另外它只在鼠标靠近视频时才出现，
+              离开 2 秒后自动隐藏，不是丢了</td></tr>
+      <tr><td>进度悬浮窗不出现</td>
+          <td>只在「顶层页面 + 有未完成任务 + 汲流在线」时出现。iframe 里不会重复挂；
+              刚下完会亮 5 秒「全部完成」再隐掉。也可以去插件弹窗看「页面组件」里
+              开关是不是关着</td></tr>
+      <tr><td>应用明明开着，扩展却显示「服务未启动」</td>
+          <td>旧版扩展只认 8788，而汲流在 8788 被占时会顺延到 8789、8790…
+              1.9.0 起的扩展会自动扫一段端口并记住新地址。同样需要重新加载扩展</td></tr>
+    </tbody>
+  </table>
+
+  <h3>安全边界</h3>
+  <ul>
+    <li>协议参数是<b>外部可控输入</b>（任何网页都能构造），只接受
+        <code>http</code> / <code>https</code> / <code>ftp</code> / <code>magnet</code> /
+        <code>ed2k</code> / <code>thunder</code> 等白名单协议，<code>javascript:</code>、
+        <code>data:</code> 一律拒绝</li>
+    <li>只写 <code>HKCU</code>（当前用户），不碰 <code>HKLM</code>，不需要管理员权限</li>
+    <li>卸载/取消注册会把整棵 <code>Software\Classes\jiliu</code> 删干净</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
 <section id="ext">
   <h2>浏览器插件</h2>
   <p class="lead">Chrome / Edge / 其他 Chromium 内核。MV3，要求 Chrome 111 以上。</p>
@@ -587,11 +737,45 @@ python jiliu.py sites</pre>
     </ul>
   </div>
 
-  <h3>两个功能</h3>
+  <h3>四个功能</h3>
   <p><strong>一、下载接管</strong> —— 见下一节，这是主菜。</p>
   <p><strong>二、页面嗅探</strong> —— 插件会钩页面里的 <code>&lt;video&gt;</code> /
   <code>&lt;audio&gt;</code> 标签，以及 <code>fetch</code> / <code>XMLHttpRequest</code> 请求，
   把真实的媒体地址捞出来。点插件图标，列表里点「交给汲流」。</p>
+
+  <p><strong>三、播放器外侧的下载按钮</strong> —— 鼠标划过网页上的播放器，会浮出一个
+  「⬇ 下载视频」。它<strong>贴在视频框外面</strong>：优先放在视频上沿外侧（和 IDM 的位置一致），
+  上面放不下就依次试右侧、下方、左侧；只有视频铺满整个屏幕时才退回内部，
+  并自动收成纯图标，尽量少挡播放器自己的按钮。</p>
+  <div class="card">
+    <span class="t">拖到顺手的位置</span>
+    <p>按钮可以直接拖动。松手后位置会记住，<strong>并且跟着视频框走</strong>（滚动、
+    窗口缩放都不会跑偏）。拖过之后就不再按默认规则自动摆位。</p>
+    <p>位置记录在本机 <code>chrome.storage.local</code> 里，不联网。
+    想恢复默认：点插件图标 →「页面组件」→「还原两个组件的位置」。</p>
+  </div>
+
+  <p><strong>四、进度悬浮窗</strong> —— 有任务在跑时，页面右下角出现一张小卡片，
+  每 4 秒自动切换一个视图：</p>
+  <table>
+    <thead><tr><th>视图</th><th>显示什么</th></tr></thead>
+    <tbody>
+      <tr><td>总速度</td><td>所有进行中任务的合计速度 + 进行中/排队/暂停个数 + 总进度条</td></tr>
+      <tr><td>当前文件</td><td>正在下的那个文件的百分比、文件名、速度、剩余时间</td></tr>
+      <tr><td>总进度</td><td>这一批任务的合计百分比 + 已下 / 总量</td></tr>
+    </tbody>
+  </table>
+  <div class="card">
+    <span class="t">交互</span>
+    <ul>
+      <li><strong>拖标题栏</strong>换位置；<strong>点内容区</strong>手动切换视图（手动切过 8 秒内不自动转）</li>
+      <li>鼠标停在卡片上时暂停自动轮转，方便盯着看</li>
+      <li><code>—</code> 收成一窄条（只留速度），<code>↗</code> 把汲流主窗口切到前台</li>
+      <li>下完不会突然消失：先亮 5 秒「✓ 全部完成」，再自己隐掉</li>
+      <li>任务全下完、或者汲流没开着时，卡片自动隐藏，不占地方</li>
+    </ul>
+    <p>两个组件都能在插件弹窗的「页面组件」里单独关掉，改完立刻生效，不用刷新页面。</p>
+  </div>
 
   <div class="card">
     <span class="t">为什么嗅探要跑在页面主世界</span>

@@ -83,21 +83,21 @@ def beep(ok: bool = True) -> None:
 
 
 def prevent_sleep(enable: bool) -> bool:
-    """阻止系统进入睡眠（下载期间）。可重入：多层调用只真正生效一次。"""
+    """阻止系统进入睡眠（下载期间）。
+
+    注意 SetThreadExecutionState 是**按线程**生效的：多个并发下载时，
+    每个任务线程都必须各自持旗。以前用引用计数只让第一个线程调，
+    它先结束时系统会在第二个任务还在跑的时候入睡。
+    引用计数只用于统计，不再决定要不要调。
+    """
     global _sleep_depth
     if os.name != "nt":
         return False
     with _sleep_lock:
         if enable:
             _sleep_depth += 1
-            if _sleep_depth > 1:
-                return True
         else:
-            if _sleep_depth <= 0:
-                return True
-            _sleep_depth -= 1
-            if _sleep_depth > 0:
-                return True
+            _sleep_depth = max(0, _sleep_depth - 1)
         try:
             import ctypes
             flags = _ES_CONTINUOUS | (_ES_SYSTEM_REQUIRED if enable else 0)

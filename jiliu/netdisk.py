@@ -225,6 +225,7 @@ class _Session:
         host = urllib.parse.urlparse(url).hostname or ""
         err: Optional[Exception] = None
         result = None
+        challenges = 0
         for _ in range(2):
             h = {"User-Agent": UA, "Accept-Encoding": "gzip"}
             ck = self._cookie_for(host)
@@ -269,9 +270,23 @@ class _Session:
                     f"反爬挑战解不开：{exc}",
                     hint="蓝奏云的反爬可能改版了，等上游适配") from exc
             if token:
+                challenges += 1
                 self.challenges_solved += 1
                 self._merge_cookie(host, [f"acw_sc__v2={token}; path=/"])
+                if challenges >= 2:
+                    # 第二轮还是挑战页：cookie 没被接受，别把挑战页当
+                    # 成功响应交给上层 —— 那会变成误导性的
+                    # 「分享页里找不到下载 iframe」。
+                    raise NetdiskError(
+                        "反爬挑战重放后仍被拦截",
+                        hint="当前网络的出口 IP 可能被风控。换网络/稍等几分钟再试",
+                        dead=True)
                 continue
+            # 没有可解的 token，但内容仍是挑战页（改版）——同样别当成功
+            if ("acw_sc__v2" in txt or "arg1=" in txt) and "<script" in txt:
+                raise NetdiskError(
+                    "蓝奏云返回了无法解析的反爬页",
+                    hint="反爬可能改版了，等上游适配；先换网络试试")
             break
         if result is not None:
             return result
@@ -548,6 +563,14 @@ def _finalize_direct(sess: _Session, direct: str, referer: str
                     pass
             if not size and cl and cl.isdigit():
                 size = int(cl)
+            # 直链域名和分享页是两套 cookie。以前这里返回空 headers，
+            # 引擎拿着裸 URL 去下，防盗链 CDN 直接 403。
+            dhost = urllib.parse.urlparse(url).hostname or ""
+            if referer:
+                headers["Referer"] = referer
+            ck = sess._cookie_for(dhost)
+            if ck:
+                headers["Cookie"] = ck
             return url, size, fn, headers
         txt = raw.decode("utf-8", "replace")
         dead = _looks_dead(txt)

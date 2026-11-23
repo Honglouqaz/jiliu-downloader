@@ -74,6 +74,8 @@ class Task:
     finished: float = 0.0
     # 队列优先级：越大越先被调度。0 = 普通；「置顶」= 当前最大 +1。
     priority: int = 0
+    # 所属队列（见 queues.py）。空 = default，老任务自然落到默认队列
+    queue: str = ""
     log: List[str] = field(default_factory=list)
     meta: Dict[str, Any] = field(default_factory=dict)
 
@@ -119,6 +121,7 @@ class Task:
             "eta_text": _eta_text(self.eta),
             "error": self.error,
             "priority": self.priority,
+            "queue": self.queue or "default",
             "created": self.created,
             "started": self.started,
             "finished": self.finished,

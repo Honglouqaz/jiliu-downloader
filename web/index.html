@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>汲流 · 下载器</title>
 <style>
   :root{
@@ -216,23 +217,68 @@
   .sect{font-size:11px; color:var(--label); letter-spacing:.7px; margin:16px 0 8px; text-transform:uppercase}
   .sect:first-child{margin-top:0}
 
+  /* ---------- 设置：整页视图 ----------
+     原来是 600px 宽的右侧抽屉，1080p 下把主列表压到 424px，
+     再在里面塞 13 个平级页签和 5 列表格，必然挤。
+     改成占满工作区的独立视图：左边固定分组导航，右边内容区限宽 900px
+     —— 版面稳定，表格不用再靠省略号活命，也不受主列表宽度影响。 */
   .drawer{
-    position:fixed; top:0; right:0; bottom:0; width:min(600px,94vw);
-    background:var(--panel); border-left:1px solid var(--line2); z-index:45;
-    transform:translateX(102%); transition:transform .2s; display:flex; flex-direction:column
+    position:fixed; inset:32px 0 0 0; z-index:45;
+    background:var(--bg); display:flex; flex-direction:column;
+    opacity:0; visibility:hidden; transform:translateY(7px);
+    transition:opacity .15s ease, transform .15s ease, visibility .15s
   }
-  .drawer.show{transform:none}
-  .drawer > header{padding:12px 15px; border-bottom:1px solid var(--line); display:flex; align-items:center}
-  .drawer > header h2{margin:0; font-size:14px}
-  .drawer > header .x{margin-left:auto; background:none; border:none; color:var(--dim); font-size:17px}
-  .drawer .tabs{display:flex; gap:4px; padding:8px 12px 0; border-bottom:1px solid var(--line); flex-wrap:wrap}
-  .drawer .tabs button{border-radius:6px 6px 0 0; border-bottom-color:transparent; font-size:12.5px}
-  .drawer .tabs button.on{background:var(--panel2); border-color:var(--line2); color:var(--accent)}
-  .drawer .body{flex:1; overflow:auto; padding:14px 15px}
-  /* 抽屉里的表格：说明/版本这类长文本允许换行，别在 600px 宽里被省略号吃掉 */
+  .drawer.show{opacity:1; visibility:visible; transform:none}
+  .drawer > header{
+    padding:0 16px; height:42px; flex:0 0 auto;
+    background:var(--chrome); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:10px
+  }
+  .drawer > header h2{margin:0; font-size:13.5px; font-weight:600}
+  .drawer > header .x{margin-left:auto; background:none; border:none; color:var(--dim); font-size:17px; padding:0 5px}
+  .setMain{flex:1; display:flex; min-height:0}
+  .setNav{
+    width:198px; flex:0 0 198px; background:var(--panel);
+    border-right:1px solid var(--line); overflow-y:auto; padding:8px 0 20px
+  }
+  .setNav .grp{
+    font-size:10.5px; color:var(--dim2); letter-spacing:.9px;
+    padding:13px 16px 5px; text-transform:uppercase
+  }
+  .setNav .grp:first-child{padding-top:4px}
+  .setNav button{
+    display:block; width:100%; text-align:left; background:none; border:none;
+    border-radius:0; border-left:2px solid transparent; padding:6px 14px 6px 20px;
+    font-size:12.5px; color:var(--dim)
+  }
+  .setNav button:hover{background:var(--panel2); color:var(--text)}
+  .setNav button.on{background:var(--sel); color:var(--accent); border-left-color:var(--accent)}
+  .drawer .body{flex:1; overflow:auto; padding:20px 26px 60px; min-width:0}
+  .setWrap{max-width:900px}
+  .setTitle{margin:0 0 4px; font-size:15px; font-weight:600}
+  .setDesc{font-size:12px; color:var(--dim); margin:0 0 16px; line-height:1.6}
   .drawer .body table td{white-space:normal; overflow-wrap:anywhere; text-overflow:clip}
   .drawer .body table th{white-space:nowrap}
   .drawer .foot{padding:11px 15px; border-top:1px solid var(--line); display:flex; gap:8px}
+  /* 设置页里的表格式表单：标签列定宽，控件列自动撑开，不再挤成一条 */
+  .tb{width:100%; table-layout:auto}
+  .tb th{font-weight:500}
+  .tb td{padding:5px 7px}
+  .tb input[type=text],.tb input[type=number]{width:100%; min-width:0}
+  /* 跨页引用：只读展示 + 一个「调整」直达按钮。
+     与其在别处藏一个开关让两边打架，不如在一处可改、处处可见。 */
+  .sumBar{
+    display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;
+    padding:10px 12px; background:var(--panel); border:1px solid var(--line);
+    border-radius:8px
+  }
+  .sumItem{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--dim); flex:1; min-width:180px}
+  .sumItem b{color:var(--text); font-weight:600}
+  .sumItem button{margin-left:auto}
+  /* 引擎顺序有几位是固定的（4 个 HTTP 引擎），用定列数而不是 auto-fit：
+     auto-fit 在 900px 下会排成 3+1，第四位单独占一行，看着像漏了 */
+  .seq4{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px}
+  .seq4 select{width:100%}
 
   .toast{
     position:fixed; right:16px; bottom:36px; max-width:460px; z-index:60;
@@ -269,6 +315,20 @@
   .ctxmenu .danger{color:var(--err)}
   /* 右键菜单里的父项与子项状态提示 */
   .ctxmenu .item .hint{margin-left:auto; font-size:11px; color:var(--dim)}
+
+  /* ---------- 窄窗口 ---------- */
+  /* 全页以前一条 @media 都没有：浏览器模式压到 800px 时菜单被裁、
+     左树把任务列表挤成一条缝。桌面窗口有 min_size 兜底，浏览器没有。 */
+  @media (max-width: 980px){
+    .menubar{flex-wrap:wrap; row-gap:4px; height:auto; padding:6px 10px}
+    .menubar .spacer{display:none}
+    aside{width:158px; flex-basis:158px}
+  }
+  @media (max-width: 760px){
+    aside{display:none}
+    main{flex-direction:column}
+    .rowacts{flex-wrap:wrap}
+  }
 </style>
 </head>
 <body>
@@ -444,11 +504,98 @@
     <button class="primary" id="plgGo">开始下载</button></div>
 </div></div>
 
-<!-- ================= 设置抽屉 ================= -->
+<!-- ================= 新建任务（完整参数） =================
+     地址栏只能填链接 + 线程，1.8.0 加的队列 / 任务级限速 / 镜像 /
+     校验 / 弹幕这些没地方设 —— 这里给一个正经的建任务面板。
+     支持一行一个链接：多行时「文件名 / 校验」这类单条专属项会隐藏。 -->
+<div class="mask" id="newMask"><div class="dlg" style="width:min(660px,94vw)">
+  <header><h2>新建任务</h2><button class="x" data-close="newMask">✕</button></header>
+  <div class="body">
+    <div class="full"><label>链接（一行一个，可批量）</label>
+      <textarea id="nwUrls" rows="3" style="width:100%;box-sizing:border-box"
+        placeholder="直链 / 视频页 / magnet: / ed2k:// / .torrent …"></textarea></div>
+
+    <div class="grid2" style="margin-top:10px">
+      <div><label>类型</label>
+        <select id="nwKind" style="width:100%">
+          <option value="auto">自动判断（推荐）</option>
+          <option value="http">直链下载</option>
+          <option value="video">视频解析</option>
+        </select></div>
+      <div><label>队列</label>
+        <select id="nwQueue" style="width:100%"></select></div>
+    </div>
+
+    <div class="full" style="margin-top:9px"><label>保存目录（留空 = 默认目录 + 按类型归档）</label>
+      <div style="display:flex;gap:7px;align-items:center">
+        <input type="text" id="nwDir" style="flex:1" placeholder="">
+        <button class="mini" id="nwPick">选择…</button>
+      </div></div>
+
+    <div class="grid2" style="margin-top:9px" id="nwSingle">
+      <div><label>文件名（留空 = 自动命名）</label>
+        <input type="text" id="nwName" style="width:100%" placeholder=""></div>
+      <div><label>线程（留空 = 按类型）</label>
+        <input type="number" id="nwThreads" min="1" max="64" style="width:100%" placeholder=""></div>
+    </div>
+
+    <div class="grid2" style="margin-top:9px">
+      <div><label>本任务限速（MB/s，0 = 不限）</label>
+        <input type="number" id="nwSpeed" min="0" step="0.5" value="0" style="width:100%"></div>
+      <div><label>预期 SHA256（有就下完校验）</label>
+        <input type="text" id="nwHash" style="width:100%" placeholder="64 位十六进制，可空"></div>
+    </div>
+
+    <div class="full" style="margin-top:9px"><label>镜像地址（一行一个，可空）</label>
+      <textarea id="nwMirrors" rows="2" style="width:100%;box-sizing:border-box"
+        placeholder="同一个文件的其他下载地址，主源坏了自动换"></textarea></div>
+
+    <div style="display:flex;gap:14px;margin-top:10px;flex-wrap:wrap">
+      <label class="chk"><input type="checkbox" id="nwDanmaku"> B 站视频顺带抓弹幕</label>
+      <label class="chk"><input type="checkbox" id="nwAuto" checked> 自动识别类型并选引擎</label>
+    </div>
+
+    <div class="note" id="nwHint" style="margin-top:9px"></div>
+
+    <!-- 播放页解析结果的落点。默认隐藏，点了「解析播放页」才出现。 -->
+    <div id="nwStreams" style="display:none;margin-top:10px"></div>
+  </div>
+  <div class="foot">
+    <button class="mini" id="nwProbe">探测</button>
+    <button class="mini" id="nwParse" title="从播放页里找出真正的视频流地址（支持苹果CMS / iframe / 内联脚本等）">解析播放页</button>
+    <span class="spacer"></span>
+    <button data-close="newMask">取消</button>
+    <button class="primary" id="nwGo">开始下载</button>
+  </div>
+</div></div>
+
+<!-- ================= 首次启动向导 ================= -->
+<!-- 目标只有一个：让第一次打开的人在两分钟内真的下到一个文件。
+     所以不做功能介绍，只做三件事——确认目录、看引擎状态、立刻试一次。
+     任何一步都可以跳过：强制走完流程是「教程」，能跳过的才是「向导」。 -->
+<div class="mask" id="onbMask">
+  <div class="dlg" style="width:min(600px,94vw)">
+    <header><h2>开始用汲流</h2></header>
+    <div class="body" id="onbBody"></div>
+    <div class="foot">
+      <button class="mini" id="onbSkip">先跳过</button>
+      <span class="spacer"></span>
+      <button class="primary" id="onbGo">下个示例文件试试</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 设置（整页视图） ================= -->
 <div class="drawer" id="drawer">
-  <header><h2>设置</h2><button class="x" id="drawerX">✕</button></header>
-  <div class="tabs" id="drawerTabs"></div>
-  <div class="body" id="drawerBody"></div>
+  <header>
+    <h2>设置</h2>
+    <span class="note" id="setCrumb"></span>
+    <button class="x" id="drawerX" title="关闭设置（Esc）">✕</button>
+  </header>
+  <div class="setMain">
+    <nav class="setNav" id="setNav"></nav>
+    <div class="body" id="drawerBody"></div>
+  </div>
   <div class="foot">
     <button class="primary" id="cfgSave">保存</button>
     <span class="note" id="stateDir"></span>
@@ -470,6 +617,7 @@ let busy = false;
 let FILTER = { kind: "all", key: "" };
 let SEL = new Set();
 let DETAIL = null;      // 详情面板当前任务 id
+let SUMCACHE = {};      // 任务 id → 校验和结果（算一次就缓存，别每次切页重算）
 let DTAB = "info";
 let PL = null;          // 当前合集解析结果
 let instCache = {};     // 引擎安装信息缓存（环境体检用）
@@ -477,9 +625,11 @@ let lastStateAt = 0;
 
 /* ==================== 基础工具 ==================== */
 
-function toast(msg, ok){
+function toast(msg, ok, html){
   const t = $("#toast");
-  t.textContent = msg;
+  // html=true 时允许 <b>/<span style> 生效（调用方负责先 esc() 所有动态内容）。
+  // 探测结果要分多行、还要标红告警，纯 textContent 只能把标签原样吐给用户。
+  if(html) t.innerHTML = msg; else t.textContent = msg;
   t.className = "toast show" + (ok ? " ok" : "");
   clearTimeout(t._t);
   t._t = setTimeout(() => { t.className = "toast"; }, ok ? 3500 : 8000);
@@ -498,6 +648,56 @@ async function api(path, opts){
   return j;
 }
 const post = (p, body) => api(p, {method:"POST", body: JSON.stringify(body || {})});
+
+/* 组件下载的进度观察器。
+ *
+ * 下载和安装（解压、落到 bin/）都在后端线程里做，前端只负责把
+ * 「正在下 37%」变成用户看得懂的一句话。按钮上直接写百分比，
+ * 不要弹一个「请稍候」的转圈 —— 110MB 的 ffmpeg 要下几分钟，
+ * 没有进度用户会以为卡死然后杀掉进程。 */
+async function watchFetch(key, btn, label){
+  const old = btn ? btn.textContent : "";
+  if(btn){ btn.disabled = true; btn.textContent = "准备…"; }
+  let idle = 0;
+  try{
+    for(let i = 0; i < 900; i++){
+      await new Promise(r => setTimeout(r, 900));
+      let d;
+      try{ d = await api("/api/tools/fetch?k=" + Date.now()); }catch(_){ continue; }
+      const it = (d.items || []).find(x => x.key === key) || {};
+      const st = it.job || {};
+      const name = label || it.label || key;
+      if(st.status === "downloading"){
+        idle = 0;
+        if(btn){
+          const pct = st.total ? Math.min(99, Math.round(st.got / st.total * 100)) : 0;
+          btn.textContent = st.total ? pct + "%" : fmtBytes(st.got || 0);
+        }
+      }else if(st.status === "unpacking"){
+        idle = 0;
+        if(btn) btn.textContent = "解压…";
+      }else if(st.status === "done"){
+        toast(`${name} 已装好` + (it.path ? `：${it.path}` : ""), true);
+        await refresh();
+        if($("#drawer").classList.contains("show")) renderDrawer();
+        return true;
+      }else if(st.status === "error"){
+        toast(`${name} 下载失败：${st.error || "未知原因"}`);
+        return false;
+      }else if(st.status === "cancelled"){
+        toast("已取消");
+        return false;
+      }else if(++idle > 2){
+        toast("没有拿到下载状态，可稍后到「引擎」页查看");
+        return false;
+      }
+    }
+    toast("等待超时；下载可能仍在后台进行");
+    return false;
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = old; }
+  }
+}
 
 function fmtBytes(n){
   if(!n && n !== 0) return "-";
@@ -640,8 +840,17 @@ function rowOf(t){
   </tr>`;
 }
 
+let _lastRowsSig = "";
 function renderRows(){
   const ts = visibleTasks();
+  // 每秒全量重写 tbody，300 行时浏览器要做 300 次 HTML 解析。
+  // 状态没变就跳过（选中集合变化也算变化）。
+  const sig = JSON.stringify(ts) + "|" + Array.from(SEL).sort().join(",");
+  if(sig === _lastRowsSig){
+    $("#emptyBox").style.display = ts.length ? "none" : "block";
+    return;
+  }
+  _lastRowsSig = sig;
   $("#rows").innerHTML = ts.map(rowOf).join("");
   $("#emptyBox").style.display = ts.length ? "none" : "block";
   $("#selCnt").textContent = SEL.size ? `已选 ${SEL.size} 项` : "";
@@ -693,12 +902,39 @@ function renderDetail(){
     body += `<div class="line">${bits.join(" · ")}</div>`;
     body += `<div class="line">${esc(t.url)}</div>`;
     if(t.dest) body += `<div class="line">→ <b>${esc(t.dest)}</b></div>`;
+    // 队列归属：能看见也就能改，否则「多队列」对已有任务是死的
+    const qs = STATE?.features?.queues || [];
+    if(qs.length){
+      const cur = t.queue || "default";
+      body += `<div class="line">队列 `
+        + `<select class="mini" id="dqSel" style="height:24px;padding:0 4px">`
+        + qs.map(q => `<option value="${esc(q.id)}"${q.id === cur ? " selected" : ""}>`
+            + `${esc(q.name || q.id)}</option>`).join("")
+        + `</select>`
+        + ` <button class="mini" id="dqGo" data-id="${t.id}">移入</button></div>`;
+    }
     if(t.error) body += `<div class="line" style="color:var(--err)">${esc(t.error)}</div>`;
     for(const w of (r.warnings || [])) body += `<div class="line warn">⚠ ${esc(w)}</div>`;
     if(bt) body += `<div class="line">BT：做种 <b>${bt.seeders ?? 0}</b> · 连接 <b>${bt.connections ?? 0}</b>`
                  + (bt.is_seeder ? " · 正在做种" : "") + `</div>`;
     if(r.reasons && r.reasons.length)
       body += `<pre>${esc(r.reasons.join("\n"))}</pre>`;
+  } else if(DTAB === "sum"){
+    const c = SUMCACHE[t.id];
+    if(!c){
+      body = `<div class="line note">点上面的「校验和」计算一次（大文件要几十秒）。</div>`;
+    } else if(c.error){
+      body = `<div class="line" style="color:var(--err)">${esc(c.error)}</div>`;
+    } else {
+      const rows = ["md5","sha1","sha256","sha512"].filter(k => c[k])
+        .map(k => `<div class="line"><b>${k.toUpperCase()}</b> `
+                  + `<code style="user-select:all">${esc(c[k])}</code></div>`).join("");
+      let cmp = "";
+      if(c.compare) cmp = `<div class="line" style="color:var(--${c.compare.match ? "ok" : "err"})">`
+        + `${c.compare.match ? "✔ 与预期一致" : "✘ 与预期不符"}（期望 ${esc((c.compare.expected||"").slice(0,16))}…）</div>`;
+      body = rows + cmp
+        + `<div class="line note">文件 ${esc(c.path || "")} · ${esc(c.size_text || "")}</div>`;
+    }
   } else {
     body = `<pre>${esc((t.log || []).join("\n") || "（还没拉到日志，切到日志页会拉一次）")}</pre>`;
   }
@@ -706,6 +942,7 @@ function renderDetail(){
   box.innerHTML = `<div class="dtabs">
       <button class="${DTAB==="info"?"on":""}" data-dtab="info">识别与策略</button>
       <button class="${DTAB==="log"?"on":""}" data-dtab="log">日志</button>
+      <button class="${DTAB==="sum"?"on":""}" data-dtab="sum">校验和</button>
       <span class="spacer" style="flex:1"></span>
       <button class="mini" data-a="open" data-id="${t.id}">打开</button>
       <button class="mini" data-close-detail="1">收起</button>
@@ -717,17 +954,39 @@ $("#detail").addEventListener("click", async (e) => {
   const dt = e.target.closest("button[data-dtab]");
   if(dt){
     DTAB = dt.dataset.dtab;
-    if(DTAB === "log"){
+      if(DTAB === "log"){
       try{
         const j = await api("/api/tasks/" + DETAIL);
         const t = (STATE.tasks || []).find(x => x.id === DETAIL);
         if(t) t.log = j.task.log || [];
       }catch(err){ toast(err.message); }
     }
+    if(DTAB === "sum" && DETAIL && !SUMCACHE[DETAIL]){
+      renderDetail();
+      toast("正在算校验和…");
+      try{
+        // 校验和是 POST（要现算，别让浏览器缓存）
+        const j = await post("/api/tasks/" + DETAIL + "/checksum", {});
+        SUMCACHE[DETAIL] = j.ok === false ? {error: j.error || "算不出来"} : j;
+      }catch(err){ SUMCACHE[DETAIL] = {error: err.message}; }
+      renderDetail();
+      return;
+    }
     renderDetail();
     return;
   }
   if(e.target.closest("button[data-close-detail]")){ DETAIL = null; renderDetail(); renderRows(); return; }
+  if(e.target.id === "dqGo"){
+    const sel = $("#dqSel");
+    const id = e.target.dataset.id;
+    try{
+      const j = await post("/api/tasks/" + id + "/queue", {queue: sel.value});
+      toast(j.ok === false ? (j.error || "搬不过去") : "已移入 " + sel.value, j.ok !== false);
+      SUMCACHE[id] = null;
+      refresh();
+    }catch(err){ toast(err.message); }
+    return;
+  }
   const b = e.target.closest("button[data-a]");
   if(b) act(b.dataset.id, b.dataset.a);
 });
@@ -741,53 +1000,141 @@ function renderStatus(){
   $("#fSpeed").innerHTML = `总速度 <b>${esc(s.total_speed_text || "-")}</b>`;
   $("#fActive").innerHTML = `进行中 <b>${s.active || 0}</b>`;
   $("#fDone").innerHTML = `已完成 <b>${(s.counts && s.counts.done) || 0}</b>`;
-  $("#fEngine").innerHTML = `引擎 <b>${esc(E.effective_http || "native")}</b>`
-    + `<span class="note" style="margin-left:4px">/ 视频 ${E.video_ready ? "yt-dlp" : "无"}</span>`;
+  $("#fEngine").innerHTML = E.probing
+    ? `引擎 <b>探测中…</b>`
+    : `引擎 <b>${esc(E.effective_http || "native")}</b>`
+      + `<span class="note" style="margin-left:4px">/ 视频 ${E.video_ready ? "yt-dlp" : "无"}</span>`;
 
   const tl = STATE?.tools || {};
-  $("#fTools").innerHTML = [["yt-dlp","视频"],["ffmpeg","合流"],["aria2c","aria2"],
-                            ["curl","curl"],["wget","wget"]]
-    .map(([k, label]) => {
-      const on = tl[k] && tl[k].available === "yes";
-      return `<span style="margin-left:10px" title="${esc(on ? (tl[k].path||"") : "未安装")}">`
-           + `<span class="dot ${on?"on":"off"}"></span>${label}${on?"":" ✗"}</span>`;
-    }).join("");
+  // 探测还没回来时，tools 是空的。这时候不能在每项后面打 ✗ ——
+  // 「没装」和「还没查」是两件事，写错了用户会去重装已经装好的东西。
+  const tlPending = tl.probing === true || Object.keys(tl).length === 0;
+  $("#fTools").innerHTML = tlPending
+    ? `<span style="margin-left:10px;color:var(--dim2)">工具探测中…</span>`
+    : [["yt-dlp","视频"],["ffmpeg","合流"],["aria2c","aria2"],
+       ["curl","curl"],["wget","wget"]]
+      .map(([k, label]) => {
+        const on = tl[k] && tl[k].available === "yes";
+        return `<span style="margin-left:10px" title="${esc(on ? (tl[k].path||"") : "未安装")}">`
+             + `<span class="dot ${on?"on":"off"}"></span>${label}${on?"":" ✗"}</span>`;
+      }).join("");
 
   const bi = STATE?.bili || {};
   const pr = STATE?.proxy || {};
   const chosen = pr.chosen || {};
   const bits = [];
-  bits.push(`<span title="${esc(bi.note || "")}"><span class="dot ${bi.logged_in?"on":"off"}"></span>B站${bi.logged_in ? "：" + esc((bi.user||{}).name || "已登录") : "未登录"}</span>`);
+  // 归档版不碰视频站，状态栏里就不该出现「B站未登录」——
+  // 一个你根本用不上的登录态，只会让人以为少了什么。
+  if(caps().allow_video_sites !== false){
+    bits.push(`<span style="margin-right:12px" title="${esc(bi.note || "")}"><span class="dot ${bi.logged_in?"on":"off"}"></span>B站${bi.logged_in ? "：" + esc((bi.user||{}).name || "已登录") : "未登录"}</span>`);
+  }
   if(pr.mode){
     const alive = chosen.url ? chosen.alive : true;
     const label = chosen.url || "直连";
-    bits.push(`<span title="${esc(pr.note || "")}"><span class="dot ${alive?"on":"off"}"></span>代理 ${esc(label)}</span>`);
+    bits.push(`<span style="margin-right:12px" title="${esc(pr.note || "")}"><span class="dot ${alive?"on":"off"}"></span>代理 ${esc(label)}</span>`);
   }
   $("#fTools").innerHTML = bits.join("") + $("#fTools").innerHTML;
 }
+
+/* ==================== 主题 ==================== */
+
+let themeApplied = false;
+
+/** 把服务端算好的颜色变量塞进 <style>。
+ *
+ * 不换 CSS 文件、不重绘 DOM —— 整个界面里的颜色都写成 var(--xxx)，
+ * 所以换主题就是换一组变量值，连滚动位置都不会丢。
+ */
+function applyTheme(t, mode){
+  if(!t || !t.tokens) return;
+  let m = (mode || t.mode || "auto");
+  if(m === "auto"){
+    m = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  const tk = (m === "dark") ? (t.dark || t.tokens) : (t.light || t.tokens);
+  const css = ":root{" + Object.entries(tk).map(([k, v]) => `--${k}:${v}`).join(";") + "}";
+  let el = document.getElementById("jiliuTheme");
+  if(!el){ el = document.createElement("style"); el.id = "jiliuTheme"; document.head.appendChild(el); }
+  el.textContent = css;
+  document.documentElement.dataset.theme = m;
+  themeApplied = true;
+}
+
+// 换了系统配色，auto 模式要跟着变
+try{
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    if(STATE?.theme) applyTheme(STATE.theme, STATE.theme.mode);
+  });
+}catch(_){}
 
 /* ==================== 轮询 ==================== */
 
 async function refresh(){
   if(busy) return;
+  // 窗口最小化 / 切到后台时不必每秒拉一次全量状态：
+  // 屏幕上没东西要看，白烧 CPU 和电池。回到前台会立刻补一次。
+  if(document.hidden) return;
   busy = true;
   try{
     const j = await api("/api/state");
     STATE = j;
+    // 挂到 window 上：排查问题时能在控制台直接看状态，
+    // 自动化脚本也靠它判断「探测完了没有」。本地单机应用，不涉及外泄。
+    window.STATE = j;
+    if(!themeApplied && j.theme) applyTheme(j.theme);
+    syncClipFromConfig();
     $("#ver").textContent = "v" + (j.version || "?");
     // 版本形态标签：国内版要一眼能看出来，否则用户会奇怪
     // 「为什么代理设置不见了」
     const ed = j.edition || {};
     const tag = $("#edTag");
     if(tag){
-      tag.textContent = ed.name || "";
-      tag.className = "tag" + (ed.key === "cn" ? " cn" : "");
-      tag.style.display = ed.name ? "" : "none";
+      // 标签显示的是**发行形态**（开源版 / 归档版），不是制式。
+      // 用户装的是哪条产品线，比「国内/全球」更该一眼看到 ——
+      // 制式决定能不能下海外站，形态决定这软件答应做什么。
+      tag.textContent = ed.form_name || ed.name || "";
+      tag.className = "tag" + ((ed.form === "archive" || ed.key === "cn") ? " cn" : "");
+      tag.style.display = (ed.form_name || ed.name) ? "" : "none";
     }
     renderSide(); renderRows(); renderStatus();
     if(DETAIL) renderDetail();
+    maybeOnboard();
+    applyFormCaps(j.edition || {});
   }catch(e){ /* 服务可能刚停 */ }
   finally{ busy = false; }
+}
+
+/* 发行形态对界面的影响。
+ *
+ * 归档版（B 版）不做视频站解析 —— 但这不是「藏个按钮」那么轻松：
+ * 首页的输入框提示、类型下拉、「账号登录」入口都要跟着变，
+ * 否则用户仍然会去粘 B 站链接，然后收到一句「本版不支持」。
+ * 一次说清做什么，比让他试三次再拒绝要好。
+ */
+let _formApplied = "";
+function applyFormCaps(ed){
+  const allowVideo = ed.allow_video_sites !== false;
+  const key = (ed.form || "") + "|" + String(allowVideo);
+  if(_formApplied === key) return;
+  _formApplied = key;
+
+  const u = $("#url");
+  if(u && ed.placeholder) u.placeholder = ed.placeholder;
+
+  const bili = $("#mBili");
+  if(bili) bili.style.display = allowVideo ? "" : "none";
+
+  const kind = $("#kind");
+  if(kind){
+    const opt = kind.querySelector('option[value="video"]');
+    if(opt) opt.hidden = !allowVideo;
+    if(!allowVideo && kind.value === "video") kind.value = "auto";
+  }
+
+  const empty = $("#emptyBox");
+  if(empty && !allowVideo){
+    empty.textContent = "还没有任务。粘一个公开资源的链接（直链 / RSS / 磁力 / 公开分享页）到上面，点「开始下载」。";
+  }
 }
 
 /* ==================== 任务动作 ==================== */
@@ -1080,17 +1427,39 @@ $("#ctxMenu").addEventListener("click", async (e) => {
    不自动建任务 —— 用户可能只是复制了别的东西，
    预填 + 聚焦是最不打扰的形态。权限被拒就自动关掉。 */
 let clipWatch = { on: false, timer: null, last: "" };
+let clipSynced = false;
+
+/* 首屏把按钮状态对齐到配置：以前按钮永远显示"关"，
+   哪怕设置页勾了「监听剪贴板」，用户以为没生效。 */
+function syncClipFromConfig(){
+  if(clipSynced) return;
+  clipSynced = true;
+  if(!(STATE?.config?.clipboard_watch)) return;
+  clipWatch.on = true;
+  const b = $("#mClip");
+  if(b){ b.textContent = "📋 剪贴板：开"; b.style.color = "var(--ok)"; }
+  clipWatch.timer = setInterval(clipPoll, 2000);
+}
 
 const URL_RE = /^(https?:\/\/|magnet:\?xt=|thunder:\/\/|ed2k:\/\/)\S+/i;
 
 async function clipPoll(){
   if(!clipWatch.on) return;
   let txt = "";
-  try{ txt = await navigator.clipboard.readText() || ""; }
-  catch(_){
-    // NotAllowedError / 无焦点等 —— 连续失败就别刷屏，静默等下一轮；
-    // 只有权限类错误（name 含 NotAllowed）才停表提示
-    return;
+  // 先问后端：服务端的剪贴板监听不依赖页面焦点/权限，
+  // 面板最小化或被浏览器拒绝 readText 时仍然有效。
+  try{
+    const j = await api("/api/clipboard");
+    const rows = Array.isArray(j.recent) ? j.recent : [];
+    if(rows.length) txt = String(rows[rows.length - 1].url || "");
+  }catch(_){ /* 后端没开就用浏览器的 */ }
+  if(!txt){
+    try{ txt = await navigator.clipboard.readText() || ""; }
+    catch(_){
+      // NotAllowedError / 无焦点等 —— 连续失败就别刷屏，静默等下一轮；
+      // 只有权限类错误（name 含 NotAllowed）才停表提示
+      return;
+    }
   }
   txt = txt.trim();
   if(!txt || txt === clipWatch.last || !URL_RE.test(txt)) return;
@@ -1106,6 +1475,9 @@ function clipToggle(){
   const btn = $("#mClip");
   btn.textContent = clipWatch.on ? "📋 剪贴板：开" : "📋 剪贴板：关";
   btn.style.color = clipWatch.on ? "var(--ok)" : "";
+  // 同步到配置：服务端据此启停 Watcher（否则只有页面开着才有效，
+  // 设置页里的「监听剪贴板」也会与按钮状态打架）。
+  post("/api/config", {clipboard_watch: clipWatch.on}).catch(() => {});
   if(clipWatch.on){
     clipWatch.timer = setInterval(clipPoll, 2000);
     clipPoll();   // 开启立刻查一次，好确认权限
@@ -1150,7 +1522,7 @@ async function doProbe(){
     if(pl.category) parts.push(`引擎 ${esc(pl.engine)} · ${pl.concurrency} 线程 · 分片 ${fmtBytes(pl.chunk_size)}` +
                               (pl.verify_hash ? " · 下完校验 SHA256" : ""));
     if((pl.warnings||[]).length) parts.push(`<span style="color:var(--warn)">⚠ ${pl.warnings.map(esc).join("；")}</span>`);
-    toast(parts.join("\n"), true);
+    toast(parts.join("\n"), true, true);
     if(!$("#threads").value && pl.concurrency) $("#threads").placeholder = pl.concurrency;
   }catch(e){ toast(e.message); }
   finally{ $("#btnProbe").disabled = false; }
@@ -1853,23 +2225,32 @@ $("#anyBody").addEventListener("click", async (e) => {
     return;
   }
 
-  // 「下载」按钮：不直接跳转，而是**交给汲流自己下** ——
-  // 这正是这个软件存在的意义，顺手也验证了引擎链路。
+  // 「下载」按钮：优先**自动装好**（下 zip、解出 exe、放进 bin/）。
+  // 原来只是把 zip 丢进下载目录，用户还得自己解压、找 exe、copy 到 bin/ ——
+  // 三步里任何一步卡住，这功能就等于没有。不支持自动安装的组件，
+  // 退回「交给汲流下载」，至少不会假装成功。
   const dl = e.target.closest("[data-extdl]");
   if(dl){
     e.preventDefault();
     const url = dl.dataset.url || "";
     const key = dl.dataset.extdl || "";
-    if(!url) return;
     const ins = (instCache[key] || {});
+    const label = ins.label || key;
+    try{
+      const r = await post("/api/tools/fetch", {key});
+      if(r.ok){ await watchFetch(key, dl, label); return; }
+    }catch(err){
+      if(err.body && err.body.error) toast(err.body.error);
+    }
+    // 自动安装不支持 → 交给下载器
+    if(!url) return;
     try{
       const j = await post("/api/tasks", {
         url, kind: "http",
-        filename: (ins.label || key) + "-installer",
+        filename: label + "-installer",
         auto_classify: true,
       });
-      // 下到「软件」类目录，别和视频混在一起
-      toast(`已交给汲流下载 ${ins.label || key}，完成后到「软件」文件夹取`, true);
+      toast(`已交给汲流下载 ${label}，完成后到「软件」文件夹取`, true);
       dl.textContent = "已加入下载";
       dl.style.opacity = ".6";
       refresh();
@@ -1879,30 +2260,417 @@ $("#anyBody").addEventListener("click", async (e) => {
   }
 });
 
-/* ==================== 设置抽屉 ==================== */
+/* ==================== 新建任务面板 ==================== */
 
-const CFG_TABS = [
-  ["general", "常规"], ["video", "视频"], ["list", "合集"],
-  ["layout", "归档"], ["engine", "引擎"], ["proxy", "代理"],
-  ["cookie", "Cookie"], ["naming", "命名"], ["bt", "BT"], ["auto", "自动化"],
-  ["edition", "版本"]
+function nwLinks(){
+  return ($("#nwUrls").value || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+}
+
+function nwSync(){
+  const n = nwLinks().length;
+  // 文件名/线程是单条才说得清的东西，批量时藏起来免得误导
+  $("#nwSingle").style.display = n > 1 ? "none" : "";
+  $("#nwHash").disabled = n > 1;
+  const hint = [];
+  if(n > 1) hint.push(`共 ${n} 条链接，将逐条建任务；文件名与校验只对单条生效。`);
+  if(n === 0) hint.push("把链接粘到上面，一行一个。");
+  $("#nwHint").textContent = hint.join(" ");
+  $("#nwGo").textContent = n > 1 ? `开始下载（${n} 条）` : "开始下载";
+}
+
+function nwOpen(prefill){
+  const qs = (STATE?.features?.queues || []);
+  $("#nwQueue").innerHTML = qs.length
+    ? qs.map(q => `<option value="${esc(q.id)}">${esc(q.name || q.id)}（并发 ${esc(q.max_concurrent)}）</option>`).join("")
+    : '<option value="default">默认</option>';
+  $("#nwUrls").value = (prefill !== undefined ? prefill : ($("#url").value || "").trim());
+  $("#nwName").value = "";
+  $("#nwThreads").value = "";
+  $("#nwSpeed").value = 0;
+  $("#nwHash").value = "";
+  $("#nwMirrors").value = "";
+  $("#nwDir").value = "";
+  $("#nwDanmaku").checked = !!STATE?.config?.danmaku;
+  $("#nwAuto").checked = true;
+  const dl = STATE?.config?.download_dir || "";
+  $("#nwDir").placeholder = dl ? "默认：" + dl : "留空用默认目录";
+  // 每次打开都清掉上一次的解析结果：留着会让人以为"还没解析就已经找到了"
+  $("#nwStreams").style.display = "none";
+  $("#nwStreams").innerHTML = "";
+  NW_STREAMS = [];
+  NW_TITLE = "";
+  nwSync();
+  openMask("newMask");
+  setTimeout(() => { $("#nwUrls").focus(); }, 60);
+}
+
+$("#nwUrls").addEventListener("input", nwSync);
+$("#mAdd").onclick = () => nwOpen();
+
+$("#nwPick").onclick = async () => {
+  try{
+    const r = await post("/api/pick-dir", {path: $("#nwDir").value});
+    if(r.path) $("#nwDir").value = r.path;
+  }catch(e){ toast(e.message); }
+};
+
+$("#nwProbe").onclick = async () => {
+  const list = nwLinks();
+  if(!list.length) return toast("先粘链接");
+  if(list.length > 1) return toast("批量不探测，直接开始即可（下的时候会自己识别）");
+  try{
+    const j = await post("/api/probe", {url: list[0]});
+    const q = j.probe || {}, pl = q.plan || {};
+    if(q.filename && !$("#nwName").value) $("#nwName").value = q.filename;
+    if(pl.category) $("#nwHint").textContent =
+      `${q.filename || ""} · ${q.size_text || "大小未知"} · ${q.content_type || "类型未知"}` +
+      ` · 建议 ${pl.engine} ${pl.concurrency} 线程`;
+    if(pl.warnings?.length) toast(pl.warnings.map(esc).join("；"), false, true);
+  }catch(e){ toast(e.message); }
+};
+
+/* ==================== 播放页解析 ====================
+ * 「粘一个播放页地址，把里面的片子下来」—— 这是 IDM / 4K Video Downloader
+ * 最值钱的那个功能。它们的做法是浏览器扩展在运行时嗅探；汲流多一条路：
+ * 直接从页面 HTML 里把播放地址抠出来（苹果CMS 系模板、<video>、
+ * iframe 里的播放器、内联 hls.js 配置），不用开播放器等广告。
+ *
+ * 为什么放在「新建任务」里而不是单开一页：用户的动作永远是
+ * 「我有个页面想把它下来」，解析是中间步骤不是目的地。
+ * 结果就地列出来，点一条立刻进队列 —— 少一次跳转就少一次放弃。
+ *
+ * 边界（不写清楚会被当成"做不到"）：DRM、播放地址加密（encrypt=1）、
+ * blob/MSE 这三类解析不出来，界面上要给出「为什么」和「还能怎么办」，
+ * 而不是一句"失败"。
+ */
+let NW_STREAMS = [];        // 最近一次解析结果，「下载这条」要回取 headers
+let NW_TITLE = "";
+
+const HOW_LABEL = {
+  "player_aaaa": "播放器变量", "内联脚本": "内联脚本", "<video>": "<video>",
+  "<source>": "<source>", "data-*": "data 属性", "iframe 参数": "iframe 参数",
+  "og:video": "og:video", "JSON-LD": "JSON-LD", "直链": "流直链",
+};
+const KIND_LABEL = {hls: "HLS", dash: "DASH", file: "整段文件", audio: "音频"};
+const howLabel = (s) => HOW_LABEL[s.how] || (String(s.how || "").startsWith("player_")
+  ? "播放器变量" : (s.how || "—"));
+
+function renderStreams(j, pageUrl){
+  const box = $("#nwStreams");
+  const rows = j.streams || [];
+  NW_STREAMS = rows;
+  NW_TITLE = (j.page && j.page.title) || "";
+  box.style.display = "";
+  if(!rows.length){
+    const notes = (j.notes || []).map(n => `<div style="margin-top:4px">· ${esc(n)}</div>`).join("");
+    box.innerHTML = `<div class="note" style="border-left:3px solid #c0392b;padding-left:9px">
+      <b>没解析到能直接下载的地址</b>
+      <div style="margin-top:4px">${esc(j.error || "页面里没有公开的流地址")}</div>
+      ${j.hint ? `<div style="margin-top:4px;opacity:.85">${esc(j.hint)}</div>` : ""}${notes}</div>`;
+    return;
+  }
+  const list = rows.map((s, i) => {
+    const host = (() => { try { return new URL(s.url).hostname; } catch(e) { return ""; } })();
+    const tag = [KIND_LABEL[s.kind] || s.kind, s.quality || s.label || "",
+                 howLabel(s)].filter(Boolean).join(" · ");
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12.5px">${esc(tag)}</div>
+        <div class="hint" style="font-size:11.5px;opacity:.7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+             title="${esc(s.url)}">${esc(host)}${esc(s.url.split(host)[1] || "").slice(0, 90)}</div>
+      </div>
+      <button class="mini" data-stream="${i}">下载这条</button>
+    </div>`;
+  }).join("");
+  box.innerHTML = `<div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px">
+    <div style="display:flex;align-items:center;gap:8px">
+      <b style="font-size:12.5px">找到 ${rows.length} 条可下载地址</b>
+      <span class="hint" style="font-size:11.5px;opacity:.7">${esc(NW_TITLE || "")}</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="hint" style="font-size:11px;opacity:.6">${j.elapsed || 0}s</span>
+    </div>${list}</div>`;
+  box.querySelectorAll("button[data-stream]").forEach(b => {
+    b.onclick = () => nwTake(Number(b.dataset.stream), pageUrl);
+  });
+}
+
+async function nwParse(){
+  const list = nwLinks();
+  if(!list.length) return toast("先把播放页地址粘进来");
+  if(list.length > 1) return toast("解析一次处理一个页面");
+  const url = list[0];
+  const btn = $("#nwParse");
+  const box = $("#nwStreams");
+  box.style.display = "";
+  box.innerHTML = '<div class="note">正在打开这个页面找播放地址…</div>';
+  btn.disabled = true;
+  btn.textContent = "解析中…";
+  try{
+    const j = await post("/api/pagesniff", {url});
+    renderStreams(j, url);
+  }catch(e){
+    renderStreams(e.body || {streams: [], error: e.message}, url);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = "解析播放页";
+  }
+}
+
+$("#nwParse").onclick = nwParse;
+
+async function nwTake(i, pageUrl){
+  const s = NW_STREAMS[i];
+  if(!s) return;
+  const body = {url: s.url, kind: "video"};
+  if(s.headers && Object.keys(s.headers).length) body.headers = s.headers;
+  if(NW_TITLE) body.title = NW_TITLE;
+  const queue = $("#nwQueue").value || "";
+  const dir = $("#nwDir").value.trim();
+  const speed = Math.round((parseFloat($("#nwSpeed").value) || 0) * 1048576);
+  if(queue) body.queue = queue;
+  if(dir) body.dest_dir = dir;
+  if(speed > 0) body.speed_limit = speed;
+  if($("#nwDanmaku").checked) body.danmaku = true;
+  try{
+    await post("/api/tasks", body);
+    closeMask("newMask");
+    FILTER = {kind: "all", key: ""};
+    await refresh();
+    toast("已加入队列：" + (NW_TITLE || KIND_LABEL[s.kind] || "视频"), true);
+  }catch(e){
+    toast(e.message, false, true);
+  }
+}
+
+$("#nwGo").onclick = async () => {
+  const list = nwLinks();
+  if(!list.length) return toast("先粘一个链接");
+  const kind = $("#nwKind").value;
+  const queue = $("#nwQueue").value || "";
+  const dir = $("#nwDir").value.trim();
+  const speed = Math.round((parseFloat($("#nwSpeed").value) || 0) * 1048576);
+  const hash = ($("#nwHash").value || "").trim();
+  const mirrors = ($("#nwMirrors").value || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  const name = ($("#nwName").value || "").trim();
+  const threads = $("#nwThreads").value;
+
+  const btn = $("#nwGo");
+  btn.disabled = true;
+  const made = [], failed = [];
+  try{
+    for(const u of list){
+      const body = {queue};
+      if(kind !== "auto") body.kind = kind;
+      if(dir) body.dest_dir = dir;
+      if(speed > 0) body.speed_limit = speed;
+      if(mirrors.length) body.mirrors = mirrors;
+      if($("#nwDanmaku").checked) body.danmaku = true;
+      if(!$("#nwAuto").checked) body.auto_classify = false;
+      if(list.length === 1){
+        if(name) body.filename = name;
+        if(hash) body.sha256 = hash;
+        if(threads) body.threads = Number(threads);
+      }
+      try{
+        const r = await post("/api/tasks", Object.assign({url: u}, body));
+        made.push(r.task?.id || u);
+      }catch(e){
+        failed.push(`${u.slice(0, 60)}：${e.message}`);
+        if(e.body && e.body.blocked){ showNetdiskGuide(e.body); break; }
+      }
+    }
+    closeMask("newMask");
+    FILTER = {kind: "all", key: ""};
+    await refresh();
+    if(made.length) toast(`已创建 ${made.length} 个任务`, true);
+    if(failed.length) toast(`失败 ${failed.length} 条：\n` + failed.slice(0, 3).join("\n"), false);
+  }finally{
+    btn.disabled = false;
+  }
+};
+
+/* ==================== 首次启动向导 ==================== */
+/* 三个商品标准里的第一条：「第一次打开 60 秒内成功下到一个文件」。
+ *
+ * 做法不是弹一段欢迎辞，而是把「下到一个文件」这件事本身做成按钮。
+ * 老用户（已经有任务）不打扰 —— 第一次升级上来看到向导，比空窗口更烦人。
+ *
+ * 示例文件用 npmmirror 上的 4KB 文本：国内可达、秒下、没有版权问题，
+ * 也真的会走完「建任务 → 分配引擎 → 落盘 → 状态变完成」整条链路。
+ */
+const ONB_SAMPLE = "https://registry.npmmirror.com/-/binary/node/v20.0.0/SHASUMS256.txt";
+let onbShown = false;
+
+function maybeOnboard(){
+  if(onbShown) return;
+  onbShown = true;
+  const c = STATE?.config || {};
+  if(c.onboarded === true) return;
+  if((STATE?.tasks || []).length) return;
+  renderOnb();
+  openMask("onbMask");
+}
+
+function renderOnb(){
+  const c = STATE?.config || {};
+  const engs = (STATE?.engines || {}).engines || [];
+  const has = k => !!engs.find(x => x.key === k && x.available);
+  const aria = has("aria2"), ff = has("ffmpeg");
+  // 引擎状态是后台探测的，向导可能比它先弹出来。这时不该下结论 ——
+  // 「正在检测」和「未安装」对用户是两件事，后者会让人白折腾一遍。
+  const probing = (STATE?.engines || {}).probing === true;
+  const mark = ok => `<span style="color:${ok ? "var(--ok)" : "var(--dim2)"}">${ok ? "✓" : "·"}</span>`;
+  $("#onbBody").innerHTML = `
+    <div class="sect" style="margin-top:0">① 文件放这里</div>
+    <div style="display:flex;gap:7px;align-items:center">
+      <input type="text" id="onbDir" value="${esc(c.download_dir || "")}" style="flex:1">
+      <button class="mini" id="onbPick">选择…</button>
+    </div>
+    <div class="note" style="margin-top:4px">以后随时能在「设置 › 下载 › 常规」里改。</div>
+
+    <div class="sect">② 引擎状态</div>
+    <div class="note" style="line-height:1.9">
+      ${mark(aria)} aria2 —— ${probing ? "正在检测…" : (aria ? "已就绪：多线程、磁力、多源都能用" :
+        "未就绪：会用自研引擎，直链照样能下，磁力不行")}<br>
+      ${mark(ff)} ffmpeg —— ${probing ? "正在检测…" : (ff ? "已就绪：能合流，也能转码" :
+        "未安装：不影响下直链，只影响「画质与音轨分离」的视频合流")}
+      ${probing || ff ? "" : `<button class="mini" data-fetch="ffmpeg" style="margin-left:6px">下载（约 110MB）</button>`}
+    </div>
+
+    <div class="sect">③ 试一次</div>
+    <div class="note">点下面的按钮会下一个小文件（4KB）到上面的目录，
+      验证「链接进得去、文件出得来」。也可以直接粘你自己的链接：</div>
+    <div style="display:flex;gap:7px;margin-top:6px">
+      <input type="text" id="onbUrl" placeholder="https://…" style="flex:1">
+      <button class="mini" id="onbAdd">下载这个</button>
+    </div>
+    <div class="note" style="margin-top:10px">
+      卡住了？右上角「环境体检」会告诉你缺什么；「设置 › 关于与支持」里能一键导出诊断包。</div>`;
+}
+
+async function markOnboarded(){
+  try{
+    await post("/api/config", {onboarded: true});
+    if(STATE) STATE.config.onboarded = true;
+  }catch(_){ /* 存不上也不影响用 */ }
+}
+
+async function onbStart(url){
+  const dir = ($("#onbDir")?.value || "").trim();
+  try{
+    if(dir && dir !== STATE?.config?.download_dir){
+      await post("/api/config", {download_dir: dir});
+      STATE.config.download_dir = dir;
+    }
+    await post("/api/tasks", {url, dest_dir: dir});
+    await markOnboarded();
+    closeMask("onbMask");
+    await refresh();
+    toast("已开始下载，进度就在主列表第一行", true);
+  }catch(err){
+    const b = err.body || {};
+    toast(b.error || err.message);
+  }
+}
+
+$("#onbSkip").onclick = async () => { await markOnboarded(); closeMask("onbMask"); };
+$("#onbGo").onclick = () => onbStart(ONB_SAMPLE);
+
+// 向导里的按钮是动态渲染的，所以走委托 —— 直接绑 $("#onbAdd").onclick
+// 会在页面初始化时拿到 null，然后整个脚本从这里断掉（表现为「界面全空」）。
+$("#onbBody").addEventListener("click", async (e) => {
+  const add = e.target.closest("#onbAdd");
+  if(add){
+    const u = ($("#onbUrl")?.value || "").trim();
+    if(!u) return toast("先把链接粘进去");
+    return onbStart(u);
+  }
+  const pick = e.target.closest("#onbPick");
+  if(pick){
+    pick.disabled = true; pick.textContent = "选择中…";
+    try{
+      const j = await post("/api/pick-dir", {initial: $("#onbDir")?.value || ""});
+      if(j.ok && j.path) $("#onbDir").value = j.path;
+    }catch(err){ toast(err.message); }
+    finally{ pick.disabled = false; pick.textContent = "选择…"; }
+    return;
+  }
+});
+
+/* ==================== 设置（整页） ==================== */
+
+/* 十三个平级页签的问题不是「不好看」，是**用户不知道去哪找**：
+   想调并发，得先猜它叫「常规」还是「扩展」；想换引擎，
+   首页和设置里各有一个开关。分组的标准只有一个 ——
+   用户遇到问题时脑子里的那句话，落在哪一组。
+     「下不动 / 想快点」      → 下载
+     「要挂代理 / 要登录」    → 网络
+     「想下整张专辑 / 定时下」→ 内容
+     「这是啥版本 / 出问题找谁」→ 关于
+   组内页数控制在 3–5 个，一屏能看全，不用滚动找。 */
+const SET_GROUPS = [
+  ["下载", [
+    ["general", "常规"],
+    ["queues",  "并发与队列"],
+    ["engine",  "引擎"],
+    ["layout",  "归档"],
+    ["naming",  "命名规则"],
+  ]],
+  ["网络", [
+    ["proxy",  "代理"],
+    ["cookie", "Cookie 与登录态"],
+    ["bt",     "BT / 磁力"],
+  ]],
+  ["内容", [
+    ["video",  "视频解析"],
+    ["list",   "合集与批量"],
+    ["auto",   "自动化"],
+    ["extras", "扩展与集成"],
+  ]],
+  ["关于", [
+    ["look",    "外观"],
+    ["edition", "版本与授权"],
+    ["about",   "关于与支持"],
+  ]],
 ];
 let cfgTab = "general";
 
 // 国内版要把「代理」「版本」这类只对海外有意义的东西藏起来。
 // 注意是**藏**而不是禁用 —— 国内版是真的一条都不发，不是摆个灰按钮。
 function caps(){ return STATE?.edition || {show_proxy:true, allow_foreign:true}; }
-function visibleTabs(){
-  return CFG_TABS.filter(([k]) => k !== "proxy" || caps().show_proxy);
+function visibleGroups(){
+  return SET_GROUPS.map(([g, items]) => [g, items.filter(([k]) =>
+    (k !== "proxy" || caps().show_proxy)
+  )]).filter(([, items]) => items.length);
+}
+function tabLabel(k){
+  for(const [, items] of SET_GROUPS) for(const [key, t] of items) if(key === k) return t;
+  return k;
+}
+function tabGroup(k){
+  for(const [g, items] of SET_GROUPS) for(const [key] of items) if(key === k) return g;
+  return "";
+}
+/** 跳到设置里的某一页。用于「当前引擎 → 去引擎页」这类跨页引用，
+ *  否则用户看到一句「请在引擎页调整」还得自己找。 */
+function gotoTab(k){
+  cfgTab = k; renderDrawer();
+  $("#drawer").classList.add("show");
+  $("#drawerBody").scrollTop = 0;
 }
 
 $("#mSettings").onclick = () => { cfgTab = "general"; renderDrawer(); $("#drawer").classList.add("show"); };
 $("#mEngines").onclick = () => { cfgTab = "engine"; renderDrawer(); $("#drawer").classList.add("show"); };
 $("#drawerX").onclick = () => $("#drawer").classList.remove("show");
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape" && $("#drawer").classList.contains("show")){
+    $("#drawer").classList.remove("show");
+  }
+});
 
-$("#drawerTabs").addEventListener("click", e => {
+$("#setNav").addEventListener("click", e => {
   const b = e.target.closest("button[data-tab]");
-  if(b){ cfgTab = b.dataset.tab; renderDrawer(); }
+  if(b){ cfgTab = b.dataset.tab; renderDrawer(); $("#drawerBody").scrollTop = 0; }
 });
 
 function field(key, label, type, extra){
@@ -1939,15 +2707,63 @@ function selOpts(pairs, cur){
   return pairs.map(([v, t]) => `<option value="${esc(v)}" ${String(cur)===String(v)?"selected":""}>${esc(t)}</option>`).join("");
 }
 
+/* 每页顶上一句话说明。写「这页管什么」而不是「欢迎使用」——
+   用户进设置页是为了解决某个具体问题，先告诉他来对地方了没有。 */
+const TAB_DESC = {
+  general: "下载目录、默认线程、限速和下载完的处理方式。第一次用只需要改「下载目录」。",
+  queues: "全局同时下几个，以及每类任务各自并发多少。任务多的时候先看这页。",
+  engine: "用哪个引擎下、按什么顺序挑。不改也能用 —— 默认会自动选最合适的。",
+  layout: "下好的文件按类型进不同子文件夹，找起来不用翻。",
+  naming: "文件名怎么拼。留空就用默认规则。",
+  proxy: "海外站点走代理，国内站点直连。默认不启用。",
+  cookie: "需要登录才能下的站点，把浏览器的登录态导进来。",
+  bt: "磁力、种子、做种与 P2P 相关设置。",
+  video: "视频页解析时用哪个工具、清晰度偏好、要不要下弹幕和封面。",
+  list: "合集展开、批量导入、序号与去重规则。",
+  auto: "定时下载、RSS 订阅、剪贴板监控、站点嗅探。让它自己跑。",
+  extras: "通知渠道、站点预设、插件、自动更新、数据导入导出。",
+  look: "主题、字号、界面密度。",
+  edition: "当前版本形态、授权状态与激活入口。",
+  about: "版本号、第三方组件与许可、出问题时怎么找到我们。",
+};
+
+/* 授权状态显示。所有页面都从这里取，保证口径一致 ——
+   界面上出现「试用中」「已过期」两种说法就够乱了，不要再各写一套。 */
+function licBadge(L){
+  L = L || {};
+  const s = L.state || "unknown";
+  if(s === "pro")      return `<b style="color:var(--ok)">正式版（Pro）</b>`;
+  if(s === "trial")    return `<b style="color:var(--accent)">试用中 · 还剩 ${L.days_left ?? "?"} 天</b>`;
+  if(s === "expired")  return `<b style="color:var(--warn)">试用已到期 · 核心功能仍可用</b>`;
+  return `<b style="color:var(--dim)">${esc(L.label || "未激活")}</b>`;
+}
+
 function renderDrawer(){
   const c = (STATE?.config) || {};
-  $("#drawerTabs").innerHTML = visibleTabs().map(([k,t]) =>
-    `<button data-tab="${k}" class="${cfgTab===k?"on":""}">${t}</button>`).join("");
+  $("#setNav").innerHTML = visibleGroups().map(([g, items]) =>
+    `<div class="grp">${esc(g)}</div>` +
+    items.map(([k, t]) =>
+      `<button data-tab="${k}" class="${cfgTab===k?"on":""}">${esc(t)}</button>`).join("")
+  ).join("");
+  $("#setCrumb").textContent = tabGroup(cfgTab) + " › " + tabLabel(cfgTab);
   const ckFiles = (STATE?.cookies?.files || []);
+  const UT = (STATE?.urltake) || {};
 
   let html = "";
   if(cfgTab === "general"){
-    html = `${dirField("download_dir", "下载目录",
+    const E = STATE?.engines || {};
+    const eff = E.effective_http || "native";
+    const effLabel = (E.engines || []).find(x => x.key === eff)?.label || eff;
+    const mc = Number(c.max_concurrent || 0);
+    // 引擎和并发不在这页改，但**必须**在这页看得见 ——
+    // 用户排查「为什么这么慢」时第一眼就是这页，跳过去改要一步到位。
+    html = `<div class="sumBar">
+        <div class="sumItem"><span>实际生效引擎</span><b>${esc(effLabel)}</b>
+          <button class="mini" data-goto="engine">调整</button></div>
+        <div class="sumItem"><span>同时下载</span><b>${mc > 0 ? mc + " 个" : "按队列设置"}</b>
+          <button class="mini" data-goto="queues">调整</button></div>
+      </div>
+      ${dirField("download_dir", "下载目录",
               "下好的文件放这里；开启归档后按类型再分子文件夹")}
       ${dirField("video_dir", "视频子目录（留空=按类型归档）",
               "留空就跟随归档规则，视频会进「视频」文件夹")}
@@ -1955,9 +2771,7 @@ function renderDrawer(){
               "分片先写这里，校验完再搬到下载目录；指到另一块盘可以分开 IO 压力")}
       <div class="grid2">
       ${field("threads", "默认线程数", "number")}
-      ${field("max_concurrent", "同时下载数", "number")}
       ${field("speed_limit", "全局限速（字节/秒，0=不限）", "number")}
-      ${field("backend", "下载引擎", "select", selOpts([["auto","auto（按下面的顺序挑）"],["aria2","aria2"],["native","native（自研多线程）"],["curl","curl"],["wget","wget"]], c.backend))}
       ${field("window_mode", "窗口模式", "select", selOpts([["auto","auto（能开原生窗口就开）"],["native","原生窗口（不弹终端/浏览器）"],["browser","浏览器标签页"]], c.window_mode))}
       ${field("auto_start", "新建任务后立即开始", "bool")}
       </div>
@@ -2013,18 +2827,29 @@ ${rows.filter(f => f.folder).map(f => "├── " + f.folder + "/").join("\n")}
     const E = STATE?.engines || {};
     const order = E.order || [];
     const engs = E.engines || [];
-    html = `<div class="note">
-      普通 HTTP 下载按下面的顺序挑第一个可用的。
-      <b>native 永远可用</b>，所以它排第几，决定了前面的引擎能不能被自动选中。</div>
-      <div class="sect">尝试顺序</div>
+    // 「首选引擎」原来在常规页，和这页的顺序是同一个决定的两个面：
+    // 指定了就用它，没指定（auto）才看顺序。放一起才不会互相打架。
+    const eff = E.effective_http || "native";
+    const effLabel = engs.find(x => x.key === eff)?.label || eff;
+    html = `<div class="sect">首选引擎</div>
       <div class="grid2">
+      ${field("backend", "普通 HTTP 下载用哪个", "select", selOpts([
+          ["auto","自动（按下面的顺序挑）"],["aria2","aria2"],
+          ["native","自研多线程（零依赖）"],["curl","curl"],["wget","wget"]], c.backend))}
+      <div><label>当前实际生效</label>
+        <div class="note" style="padding-top:9px">按现在的设置，普通链接会用
+          <b style="color:var(--accent)">${esc(effLabel)}</b> 下载</div></div>
+      </div>
+      <div class="note">选「自动」就按下面的顺序挑第一个能用的；手动指定的引擎如果没装，会自动退回顺序表。</div>
+      <div class="sect">尝试顺序（自动时生效）</div>
+      <div class="seq4">
       ${order.map((k, i) => {
         const e = engs.find(x => x.key === k) || {label:k, available:false};
         return `<div><label>第 ${i+1} 位</label>
           <select data-eorder="${i}">
             ${selOpts([["native","自研多线程"],["aria2","aria2"],["curl","curl"],["wget","wget"]], k)}
           </select>
-          <span class="note" style="margin-left:6px">${e.available ? "✓ 可用" : "✗ 未安装"}</span>
+          <span class="note" style="margin-left:6px">${e.pending ? "检测中…" : (e.available ? "✓ 可用" : "✗ 未安装")}</span>
         </div>`;
       }).join("")}
       </div>
@@ -2038,18 +2863,66 @@ ${rows.filter(f => f.folder).map(f => "├── " + f.folder + "/").join("\n")}
       </div>
       <div class="note">视频 CDN 对同 IP 并发很敏感，一套参数打所有站容易触发限流。</div>
       <div class="sect">本机引擎状态</div>
-      <div class="tblwrap" style="max-height:230px">
-      <table><thead><tr><th>引擎</th><th>状态</th><th>版本</th><th>说明</th></tr></thead>
+      <table class="tb"><thead><tr>
+        <th style="width:184px">引擎</th><th style="width:132px">状态</th><th>说明</th></tr></thead>
       <tbody>${engs.map(e => `<tr>
         <td><b>${esc(e.label)}</b><div class="note">${esc(e.tagline||"")}</div></td>
-        <td>${e.available ? '<span style="color:#6fd39b">可用</span>' : '<span style="color:#ef8f7f">未安装</span>'}</td>
-        <td class="mono" style="font-size:11px">${esc((e.version||"").slice(0,30) || "–")}</td>
-        <td class="note">${esc(e.detail||"")}</td>
+        <td>${e.pending
+              ? '<span style="color:var(--dim2)">检测中…</span>'
+              : (e.available
+                 ? '<span style="color:#6fd39b">✓ 可用</span>'
+                 : '<span style="color:#ef8f7f">✗ 未安装</span>')}
+          <div class="note">${esc((e.version||"").slice(0,28) || "–")}</div></td>
+        <td class="note">${esc(e.detail||"")}
+          ${e.available || e.pending ? "" : (e.fetchable
+              ? ` <button class="mini" data-fetch="${esc(e.key)}">下载安装</button>`
+              : ` <span style="color:var(--warn)">需手动安装</span>`)}</td>
       </tr>`).join("")}</tbody></table>
-      </div>
-      <div class="row" style="margin-top:8px">
+      <div class="row" style="margin-top:10px">
         <button class="mini" id="engRefresh">重新探测</button>
+        <span class="note">「下载安装」会把组件放到程序目录的 bin/，只认官方地址。</span>
       </div>`;
+  }
+  else if(cfgTab === "queues"){
+    const F = STATE?.features || {};
+    const Q = F.queues || [];
+    const mc = Number(c.max_concurrent || 0);
+    const sum = Q.reduce((n, q) => n + (Number(q.max_concurrent) || 1), 0);
+    html = `<div class="sect">全局</div>
+      <div class="grid2">
+      ${field("max_concurrent", "同时下载数（0 = 各队列之和）", "number")}
+      <div><label>现在最多同时跑</label>
+        <div class="note" style="padding-top:9px">
+          <b style="color:var(--accent)">${mc > 0 ? mc : sum}</b> 个任务
+          <span style="color:var(--dim2)">（${mc > 0 ? "受全局上限约束" : "各队列并发相加 = " + sum}）</span>
+        </div></div>
+      </div>
+      <div class="note">「同时下载数」是总闸，「队列并发」是每个队列各自放几个。
+        两个都设了时取更小的那个 —— 所以数字对不上不是 bug，是总闸在拦。</div>
+
+      <div class="sect">队列（各自并发与限速）</div>
+      <table class="tb" id="qTable">
+        <thead><tr><th style="width:150px">队列</th><th style="width:80px">并发</th>
+        <th style="width:100px">限速(MB/s)</th><th style="width:80px">优先级</th>
+        <th>在用</th><th style="width:70px"></th></tr></thead>
+        <tbody>${Q.length ? Q.map(q => `<tr>
+          <td><input type="text" data-q="id" data-qid="${esc(q.id)}" value="${esc(q.name||q.id)}"></td>
+          <td><input type="number" min="1" max="16" data-q="max_concurrent" data-qid="${esc(q.id)}" value="${esc(q.max_concurrent)}"></td>
+          <td><input type="number" min="0" step="0.5" data-q="speed_mb" data-qid="${esc(q.id)}" value="${((q.speed_limit||0)/1048576).toFixed(1)}"></td>
+          <td><input type="number" min="0" max="9" data-q="priority" data-qid="${esc(q.id)}" value="${esc(q.priority)}"></td>
+          <td class="note">${q.count || 0} 个任务</td>
+          <td>${q.id === "default" ? "" : `<button class="mini danger" data-qdel="${esc(q.id)}">删除</button>`}</td>
+        </tr>`).join("") : `<tr><td colspan="6" class="note">还没有自定义队列，所有任务都在默认队列里。</td></tr>`}
+        </tbody>
+      </table>
+      <div style="display:flex; gap:6px; margin-top:8px; flex-wrap:wrap">
+        <input type="text" id="newQid" placeholder="新队列 id（英文）" style="width:150px">
+        <input type="text" id="newQname" placeholder="显示名" style="width:130px">
+        <button class="mini" id="addQ">加一条</button>
+        <button class="mini" id="saveQ">保存队列</button>
+      </div>
+      <div class="note" style="margin-top:6px">
+        典型用法：给「视频」单开一条并发 1 的队列，避免视频站限流时把其他下载一起拖死。</div>`;
   }
   else if(cfgTab === "auto"){
     const sc = c.schedule || {};
@@ -2067,6 +2940,36 @@ ${rows.filter(f => f.folder).map(f => "├── " + f.folder + "/").join("\n")}
       ${field("grab_max_pages", "站点抓取页面上限", "number")}
       ${field("grab_same_origin", "只抓同源", "bool")}
       </div>
+      <div class="sect">协议唤起（jiliu://）</div>
+      ${field("url_protocol_auto", "启动时自动注册 jiliu:// 协议", "bool")}
+      <div class="full">
+        <label>注册状态</label>
+        <div class="row" style="gap:8px;align-items:center">
+          <b style="color:${UT.registered ? (UT.stale ? "var(--warn)" : "var(--ok)") : "var(--dim)"}">${
+            UT.registered ? (UT.stale ? "已注册，但指向的路径已失效" : "已注册") : "未注册"}</b>
+          <button class="mini" data-ut="register">立即注册</button>
+          <button class="mini" data-ut="unregister">取消注册</button>
+        </div>
+        <div class="note">注册之后两点会生效：网页里点 <b style="white-space:nowrap">jiliu://</b> 链接能直接唤起；
+          浏览器扩展发现汲流没开着时，也会用它把程序拉起来再补投任务。
+          只写当前用户（HKCU），不需要管理员权限。</div>
+        ${UT.status && UT.status.command ? `<div class="note" style="word-break:break-all">当前指向：${esc(UT.status.command)}</div>` : ""}
+      </div>
+      <div class="full">
+        <label>试试看（会用浏览器打开下面这个协议链接）</label>
+        <div class="row" style="gap:7px">
+          <input id="utSpec" value="${esc((UT.examples || [{}])[0].text || "jiliu://wake")}" style="flex:1">
+          <button class="mini" data-ut="open">打开</button>
+          <button class="mini" data-ut="parse">只解析</button>
+        </div>
+      </div>
+      ${(UT.recent || []).length ? `<div class="full"><label>最近一次唤起</label>
+        ${UT.recent.slice().reverse().slice(0, 5).map(r => `<div class="note" style="margin-bottom:4px">
+          <b style="color:${r.ok ? "var(--ok)" : "var(--err)"}">${r.ok ? "成功" : "失败"}</b>
+          ${esc((r.url || "").slice(0, 90))}
+          ${r.error ? " · " + esc(r.error) : ""}
+          <span style="color:var(--dim)"> · ${new Date(r.at * 1000).toLocaleTimeString()}</span>
+        </div>`).join("")}</div>` : ""}
       <div class="sect">计划任务</div>
       <div class="chk"><input type="checkbox" id="c_sched_enabled" ${sc.enabled?"checked":""}>
         <label for="c_sched_enabled">只在指定时段下载（其余时间队列自动暂停）</label></div>
@@ -2101,8 +3004,46 @@ ${rows.filter(f => f.folder).map(f => "├── " + f.folder + "/").join("\n")}
   }
   else if(cfgTab === "edition"){
     const d = STATE?.edition || {};
-    html = `<div class="note">${esc(d.note || "")}</div>
-      <div class="sect">选择版本</div>
+    const L = STATE?.license || {};
+    const pro = L.pro_features || {};
+    const on = L.plan === "pro";
+    html = `<div class="sect">授权状态</div>
+      <table class="tb"><tbody>
+        <tr><td style="width:150px" class="note">当前</td><td>${licBadge(L)}</td></tr>
+        <tr><td class="note">设备标识</td><td class="mono" style="font-size:11.5px">${esc(L.device || "-")}</td></tr>
+        ${L.license_id ? `<tr><td class="note">许可证号</td><td class="mono" style="font-size:11.5px">${esc(L.license_id)}</td></tr>` : ""}
+        ${L.name ? `<tr><td class="note">授权给</td><td>${esc(L.name)}</td></tr>` : ""}
+        ${L.expires_at ? `<tr><td class="note">到期</td><td>${esc(L.expires_at)}${L.days_left != null ? `（还剩 ${L.days_left} 天）` : ""}</td></tr>` : ""}
+      </tbody></table>
+      ${L.note ? `<div class="note" style="margin-top:6px">${esc(L.note)}</div>` : ""}
+
+      <div class="sect">Pro 包含什么</div>
+      <div class="note" style="margin-bottom:6px">${on ? "以下功能现在全部可用。" : "以下功能当前为锁定状态；核心下载不受影响。"}</div>
+      <table class="tb"><tbody>
+        ${Object.entries(pro).map(([k, v]) => `<tr>
+          <td style="width:34px;text-align:center;color:${on ? "var(--ok)" : "var(--dim2)"}">${on ? "✓" : "·"}</td>
+          <td class="note" style="color:${on ? "var(--text)" : "var(--dim)"}">${esc(v)}</td></tr>`).join("")}
+      </tbody></table>
+
+      <div class="sect">激活</div>
+      <div class="note" style="margin-bottom:6px">
+        把收到的许可证整段粘进来（<code>JILIU1.</code> 开头，共三段）。
+        <b>激活是离线校验</b>，不联网、不上传任何信息；换机时把上面的设备标识发给我们就行。</div>
+      <textarea id="licKey" rows="4" style="width:100%" placeholder="JILIU1.xxxxx.yyyyy"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="licActivate">激活</button>
+        <button class="mini" id="licCopyDev">复制设备标识</button>
+        ${L.license_id ? `<button class="mini danger" id="licClear">移除本机许可证</button>` : ""}
+      </div>
+
+      <div class="sect">发行形态</div>
+      <div class="note" style="margin-bottom:6px">
+        当前：<b>${esc(d.form_name || "-")}</b> —— ${esc(d.form_tagline || "")}
+        <br>这一版主要卖的是：${esc(d.sells || "-")}</div>
+      ${d.compliance ? `<div class="note" style="color:var(--warn);margin-bottom:8px">${esc(d.compliance)}</div>` : ""}
+
+      <div class="sect">下载制式（国内版 / 全球版）</div>
+      <div class="note">${esc(d.note || "")}</div>
       ${(d.all || []).map(v => `
         <div class="chk" style="margin-bottom:6px">
           <input type="radio" name="edition" id="ed_${esc(v.key)}" value="${esc(v.key)}" ${d.key===v.key?"checked":""}>
@@ -2112,6 +3053,53 @@ ${rows.filter(f => f.folder).map(f => "├── " + f.folder + "/").join("\n")}
         切换后<b>需要重启程序</b>才完全生效（界面元素会跟着变）。</div>
       <div class="sect">已明确识别的海外站点</div>
       <div class="note">${esc((d.foreign_platforms || []).join("、"))}</div>`;
+  }
+  else if(cfgTab === "about"){
+    const A = STATE?.about || {};
+    const L = STATE?.license || {};
+    const comps = A.components || [];
+    html = `<div class="sect">版本</div>
+      <table class="tb"><tbody>
+        <tr><td style="width:150px" class="note">版本号</td><td><b>${esc(A.version || STATE?.version || "-")}</b>
+          ${A.build ? ` <span class="note">（${esc(A.build)}）</span>` : ""}</td></tr>
+        <tr><td class="note">发行形态</td><td>${esc(A.edition_name || "-")} · ${esc(A.form_name || "-")}</td></tr>
+        <tr><td class="note">安装形态</td><td>${esc(A.install_kind || "-")}</td></tr>
+        <tr><td class="note">状态目录</td><td class="mono" style="font-size:11.5px;word-break:break-all">${esc(A.state_dir || "-")}</td></tr>
+      </tbody></table>
+
+      <div class="sect">授权</div>
+      <table class="tb"><tbody>
+        <tr><td style="width:150px" class="note">当前状态</td><td>${licBadge(L)}</td></tr>
+        <tr><td class="note">设备标识</td><td class="mono" style="font-size:11.5px">${esc(L.device || "-")}</td></tr>
+        ${L.expires_at ? `<tr><td class="note">有效期至</td><td>${esc(L.expires_at)}</td></tr>` : ""}
+      </tbody></table>
+      <div class="row" style="margin-top:8px">
+        <button class="mini" data-goto="edition">去激活 / 查看权益</button>
+      </div>
+
+      <div class="sect">第三方组件</div>
+      <div class="note" style="margin-bottom:6px">
+        汲流本体零第三方运行时依赖；随包带的外部程序与内置库按下表许可分发，
+        源码与许可全文见程序目录 <code>licenses/</code>。</div>
+      <table class="tb"><thead><tr>
+        <th style="width:150px">组件</th><th style="width:120px">许可</th><th>用途</th></tr></thead>
+        <tbody>${(comps.length ? comps : [{name:"（未随包外部程序）", license:"-", use:"-" }]).map(x => `<tr>
+          <td>${esc(x.name)}</td><td class="note">${esc(x.license)}</td>
+          <td class="note">${esc(x.use || "")}</td></tr>`).join("")}
+        </tbody></table>
+
+      <div class="sect">出问题了怎么办</div>
+      <div class="note" style="margin-bottom:8px">
+        先点下面的「导出诊断包」：里面是版本、配置（已隐去 Cookie 与密钥）、最近 300 行日志，
+        <b>不含你下载的文件</b>。把它发到任意一个支持渠道，我们看日志定位，比截图快得多。</div>
+      <div class="row">
+        <button id="diagBtn">导出诊断包</button>
+        <button class="mini" id="updCheck">检查更新</button>
+        <button class="mini" id="openLogs">打开日志目录</button>
+      </div>
+      <div class="note" style="margin-top:10px">
+        支持渠道：<b>${esc(A.support || "GitHub Issues")}</b>
+        ${A.support_url ? ` · <a href="${esc(A.support_url)}" target="_blank" rel="noopener">${esc(A.support_url)}</a>` : ""}</div>`;
   }
   else if(cfgTab === "video"){
     html = `<div class="grid2">
@@ -2245,7 +3233,169 @@ ${rows.filter(f => f.folder).map(f => "├── " + f.folder + "/").join("\n")}
         想回报社区就把它调大。</div>`;
   }
 
-  $("#drawerBody").innerHTML = html;
+  else if(cfgTab === "look"){
+    const T = STATE?.theme || {};
+    const L = STATE?.i18n || {};
+    html = `
+      <div class="sect">配色</div>
+      <div class="grid2">
+      ${field("ui_theme", "预设", "select", selOpts(
+          [["ink","墨（水墨，中性）"],["paper","纸（更亮）"],["night","夜（深色优先）"]],
+          (STATE.config||{}).ui_theme || "ink"))}
+      ${field("ui_mode", "明暗", "select", selOpts(
+          [["auto","跟随系统"],["light","浅色"],["dark","深色"]],
+          (STATE.config||{}).ui_mode || "auto"))}
+      ${field("ui_accent", "强调色（留空=跟随预设）", "select", selOpts(
+          [["","跟随预设"],["jade","青玉"],["rust","赭石"],["ink","墨蓝"],["plum","紫檀"]],
+          (STATE.config||{}).ui_accent || ""))}
+      </div>
+      <div class="note" style="margin-top:8px">
+        主题只换 CSS 变量，不重绘界面。改完点「保存」立即生效。</div>
+      <div class="sect">语言</div>
+      <div class="note">
+        界面目前只有简体中文。后端语言包（i18n）已经就绪，前端文案还没接入 ——
+        这里先不摆一个「改了没反应」的开关，等接完再放出来。</div>`;
+  }
+  else if(cfgTab === "extras"){
+    const F = STATE?.features || {};
+    const Q = F.queues || [];
+    const PL = F.plugins || {};
+    const UP = F.update || {};
+    const SH = F.shell || {};
+    const FI = F.finish || {};
+    html = `
+      <div class="sect">自动更新</div>
+      <div class="note" style="margin-bottom:6px">
+        当前 ${esc(F.version || "")} · 安装形态 ${esc(UP.kind || "-")}
+        ${(UP.pending && UP.pending.version) ? " · 已有更新待重启生效：" + esc(UP.pending.version) : ""}</div>
+      <div class="grid2">
+      ${field("update_check", "启动时检查更新", "bool")}
+      ${field("update_auto_download", "查到就后台下好（退出时装）", "bool")}
+      ${field("update_channel", "通道", "select", selOpts(
+          [["stable","只收正式版"],["beta","含预发布版"]],
+          (STATE.config||{}).update_channel || "stable"))}
+      </div>
+      <div style="display:flex; gap:6px; margin-top:8px">
+        <button class="mini" id="btnUpdCheck">检查更新</button>
+        <button class="mini" id="btnUpdDl">下载更新</button>
+        <button class="mini" id="btnUpdApply">重启并安装</button>
+      </div>
+
+      <div class="sect">系统集成</div>
+      <div class="grid2">
+      <div class="chk"><input type="checkbox" id="c_shell_menu" ${(STATE.config||{}).shell_menu?"checked":""}>
+        <label for="c_shell_menu">注册到右键菜单（文件/文件夹/背景）</label></div>
+      <div class="chk"><input type="checkbox" id="dropToggle" ${(STATE.config||{}).drop_target?"checked":""}>
+        <label for="dropToggle">显示拖拽悬浮窗</label></div>
+      </div>
+      <div class="note" style="margin-top:6px">
+        右键菜单写的是 HKCU，不需要管理员；状态：${SH.registered ? "已注册" : "未注册"}
+        ${SH.stale ? "（指向的 exe 变了，需要重新注册）" : ""}
+        <br>拖拽窗接受链接、.torrent、.url 快捷方式、以及文件夹里的种子/清单。</div>
+
+      <div class="sect">全部完成后</div>
+      <div class="grid2">
+      ${field("finish_action", "动作", "select", selOpts([
+          ["none","不做任何事"],["shutdown","关机"],["hibernate","休眠"],
+          ["sleep","睡眠"],["lock","锁定屏幕"],["exit","退出汲流"]],
+          (STATE.config||{}).finish_action || "none"))}
+      ${field("finish_delay", "倒计时（秒，0=立即）", "number")}
+      ${field("finish_when_all_done", "必须全部任务都完成", "bool")}
+      </div>
+      <div class="note" style="margin-top:6px">
+        关机前会留出倒计时，期间可以取消（<button class="mini" id="btnFinCancel">取消关机</button>）。
+        只在「有任务真的下完」之后触发，不会因为空队列把机器关了。</div>
+
+      <div class="sect">下载弹幕 / 直播录制</div>
+      <div class="grid2">
+      ${field("danmaku", "B 站视频下完顺带抓弹幕", "bool")}
+      ${field("danmaku_font", "弹幕字体", "text")}
+      ${field("live_record", "把 m3u8 直播流当录制处理", "bool")}
+      ${field("live_minutes", "单次录制上限（分钟，0=不限）", "number")}
+      </div>
+      <div class="note" style="margin-top:6px">
+        弹幕存成 <code>视频名.danmaku.xml</code>（留档）+ <code>视频名.ass</code>（播放器自动挂载）。</div>
+
+      <div class="sect">站点预设（Smart Mode）</div>
+      <div class="note" style="margin-bottom:6px">
+        同一个站第二次下就不用重选画质了。匹配走域名后缀，最长后缀优先。</div>
+      <div id="psList">
+        ${((F.presets && F.presets.presets) || []).length
+          ? ((F.presets.presets) || []).map(x => `<div style="margin:3px 0;display:flex;gap:8px;align-items:baseline">
+              <b style="min-width:130px">${esc(x.key)}</b>
+              <span class="note" style="flex:1">${esc(x.summary)}</span>
+              <button class="mini danger" data-psdel="${esc(x.key)}">删</button>
+            </div>`).join("")
+          : '<span class="note">还没有预设。加一条之后，同域名的视频任务会自动套用。</span>'}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+        <input type="text" id="psHost" placeholder="站点域名，如 bilibili.com" style="width:190px">
+        <select id="psQn" style="width:130px">
+          ${(((F.presets && F.presets.qn) || [])).map(q => `<option value="${esc(q.id)}">${esc(q.text)}</option>`).join("")}
+        </select>
+        <button class="mini" id="psAdd">记住这个站的画质</button>
+      </div>
+
+      <div class="sect">通知渠道（Webhook）</div>
+      <div class="note" style="margin-bottom:6px">
+        ${(F.channels && F.channels.channels || []).length
+            ? (F.channels.channels||[]).map(c => `<div>· ${esc(c.type_text||c.type)} ${esc(c.name||"")}
+               <button class="mini danger" data-chdel="${esc(c.id)}">删</button></div>`).join("")
+            : "还没有渠道。在下面加一个，下载完成/失败时会推消息。"}
+      </div>
+      <div class="grid2">
+        <div><label>渠道类型</label>
+          <select id="chType" style="width:100%">
+            ${((F.channels && F.channels.types)||[]).map(t=>`<option value="${esc(t.id)}">${esc(t.text)}</option>`).join("")}
+          </select></div>
+        <div><label>名字（可空）</label>
+          <input type="text" id="chName" style="width:100%" placeholder="比如：手机 Bark"></div>
+      </div>
+      <div class="full" style="margin-top:8px"><label>地址 / 服务器 URL</label>
+        <input type="text" id="chUrl" style="width:100%" placeholder="https://…"></div>
+      <div class="full" style="margin-top:8px"><label>token / key（有的渠道要）</label>
+        <input type="text" id="chToken" style="width:100%" placeholder="留空表示不需要"></div>
+      <div style="display:flex; gap:6px; margin-top:9px">
+        <button class="mini primary" id="chAdd">添加</button>
+        <button class="mini" id="chTest">发一条测试</button>
+      </div>
+
+      <div class="sect">解析插件</div>
+      <div class="note" style="margin-bottom:6px">
+        目录：<code>${esc(PL.dir || "")}</code> —— 放进去的 <code>.py</code> 会被加载，
+        改完点「重新加载」即可生效，异常不影响主程序。</div>
+      <div>
+        ${(PL.plugins || []).length ? (PL.plugins||[]).map(x => `<div style="margin:3px 0">
+          <span class="dot ${x.ok && x.enabled ? "on" : "off"}"></span>
+          <b>${esc(x.name)}</b> <span class="note">${esc(x.version||"")} ${esc(x.description||"")}</span>
+          ${x.error ? `<span style="color:var(--err)"> · ${esc(x.error)}</span>` : ""}
+          <button class="mini" data-plgtoggle="${esc(x.key)}" data-plgon="${x.ok && x.enabled ? 0 : 1}">
+            ${x.ok && x.enabled ? "停用" : "启用"}</button>
+        </div>`).join("") : '<span class="note">还没有插件</span>'}
+      </div>
+      <div style="margin-top:8px"><button class="mini" id="plgReload">重新加载</button>
+        <button class="mini" id="plgOpen">打开插件目录</button></div>
+
+      <div class="sect">任务导入 / 导出</div>
+      <div class="note" style="margin-bottom:6px">
+        JSON 带队列、请求头、哈希，可整表迁移；aria2 是 <code>aria2c -i</code> 的输入文件；
+        txt 是一行一个链接。</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px">
+        <button class="mini" data-exp="json">导出 JSON</button>
+        <button class="mini" data-exp="aria2">导出 aria2</button>
+        <button class="mini" data-exp="txt">导出 txt</button>
+      </div>
+      <textarea id="impBox" rows="6" style="width:100%;box-sizing:border-box"
+                placeholder="把导出的内容粘到这里，或粘贴一串链接再点导入"></textarea>
+      <div style="display:flex; gap:6px; margin-top:6px">
+        <button class="mini" id="impBtn">导入（先暂停，确认后再开始）</button>
+        <button class="mini" id="expDl">下载为文件</button>
+      </div>`;
+  }
+  const desc = TAB_DESC[cfgTab] || "";
+  $("#drawerBody").innerHTML =
+    `<div class="setWrap"><h3 class="setTitle">${esc(tabLabel(cfgTab))}</h3>` +
+    (desc ? `<p class="setDesc">${esc(desc)}</p>` : "") + html + `</div>`;
   $("#stateDir").textContent = "状态目录：" + (STATE?.state_dir || "-");
 
   if(cfgTab === "naming") previewNaming();
@@ -2263,6 +3413,14 @@ $("#drawerBody").addEventListener("input", e => {
   if(e.target.id === "c_name_pattern") previewNaming();
 });
 $("#drawerBody").addEventListener("click", async (e) => {
+  /* 这个 handler 里下面一大串分支都用 `t.id === "..."` 判断，但 `t`
+     一直是未定义的 —— 于是第一个 `if(t.id === "licActivate")` 就抛
+     ReferenceError，把它后面的所有分支全部拦住（激活、移除许可证、
+     导出诊断包、打开日志、检查更新，以及后加的协议唤起）。
+     表现是"按钮点了没反应"，而且控制台只有一行 t is not defined。
+     closest 而不是 e.target：按钮里常有图标/文字节点，
+     直接取 target 会拿到 span，id 对不上。 */
+  const t = e.target.closest("button") || e.target;
   const v = e.target.closest("button[data-var]");
   if(v){
     const p = $("#c_name_pattern");
@@ -2297,8 +3455,140 @@ $("#drawerBody").addEventListener("click", async (e) => {
   const sdel = e.target.closest("button[data-subdel]");
   if(sdel){
     try{ await post("/api/subscriptions/remove", { id: sdel.dataset.subdel });
-         toast("已删除", true); await refresh(); renderDrawer(); }
+         toast("已删除", true); await await refresh(); renderDrawer(); }
     catch(err){ toast(err.message); }
+    return;
+  }
+
+  // —— 授权：激活 / 复制设备标识 / 移除 ——
+  if(t.id === "licActivate"){
+    const key = ($("#licKey")?.value || "").trim();
+    if(!key) return toast("先把许可证内容粘进来");
+    t.disabled = true;
+    try{
+      const j = await post("/api/license", {key});
+      toast(`已激活 ${j.name || ""}${j.expires_at ? " · 到期 " + j.expires_at : ""}`, true);
+      await refresh(); renderDrawer();
+    }catch(err){
+      toast((err.body && err.body.error) || err.message);
+    }finally{ t.disabled = false; }
+    return;
+  }
+  if(t.id === "licCopyDev"){
+    const dev = STATE?.license?.device || "";
+    try{ await navigator.clipboard.writeText(dev); toast("已复制设备标识：" + dev, true); }
+    catch(_){ toast("复制失败，请手动选中：" + dev); }
+    return;
+  }
+  if(t.id === "licClear"){
+    if(!confirm("移除本机许可证？移除后会回到试用状态（试用期不会重置）。")) return;
+    try{
+      await post("/api/license/clear", {});
+      toast("已移除本机许可证", true);
+      await refresh(); renderDrawer();
+    }catch(err){ toast(err.message); }
+    return;
+  }
+
+  // —— 关于页：诊断包 / 检查更新 / 打开日志目录 ——
+  if(t.id === "diagBtn"){
+    t.disabled = true; t.textContent = "打包中…";
+    try{
+      const j = await api("/api/diagnose");
+      if(!j.ok) return toast(j.error || "导出失败");
+      toast("诊断包已生成：" + j.path + "\n把它发到支持渠道，我们看日志定位。", true);
+      const dir = j.path.replace(/[\\/][^\\/]+$/, "");
+      post("/api/open-path", {path: dir, mode: "folder"}).catch(() => {});
+    }catch(err){ toast(err.message); }
+    finally{ t.disabled = false; t.textContent = "导出诊断包"; }
+    return;
+  }
+  if(t.id === "openLogs"){
+    const dir = (STATE?.about?.state_dir || "") + "/logs";
+    try{
+      const j = await post("/api/open-path", {path: dir, mode: "folder"});
+      if(!j.ok) toast("日志目录还不存在（没有报过错时是正常的）");
+    }catch(err){ toast(err.message); }
+    return;
+  }
+  if(t.id === "updCheck"){
+    t.disabled = true; t.textContent = "检查中…";
+    try{
+      // check 是 GET 路由；以前用 POST 调，恒 404。
+      const j = await api("/api/update/check?force=1");
+      if(!j.ok){ toast(j.error || "检查失败"); return; }
+      toast(j.has_update
+        ? `有新版本 ${j.latest}，可在「扩展与集成 › 自动更新」里下载`
+        : "已经是最新版本", true);
+    }catch(err){ toast(err.message); }
+    finally{ t.disabled = false; t.textContent = "检查更新"; }
+    return;
+  }
+
+  // 协议唤起：注册 / 取消 / 打开 / 只解析
+  const utBtn = e.target.closest("button[data-ut]");
+  if(utBtn){
+    const act = utBtn.dataset.ut;
+    const spec = (($("#utSpec") || {}).value || "").trim();
+    if(act === "open"){
+      // 交给系统：浏览器会把 jiliu:// 交给注册过的协议处理器
+      if(!spec){ toast("先填一个协议链接"); return; }
+      window.open(spec, "_blank");
+      toast("已交给系统处理，注意浏览器可能弹一次确认框", true);
+      return;
+    }
+    if(act === "parse"){
+      try{
+        const j = await post("/api/urltake", { action: "test", spec });
+        const p = j.parsed || {};
+        showAny("协议解析结果", `<div class="kv">
+          <div><b>链接</b>${esc(p.url || "")}</div>
+          <div><b>来源页</b>${esc(p.referer || "（无）")}</div>
+          <div><b>标题</b>${esc(p.title || "（无）")}</div>
+          <div><b>类型</b>${esc(p.kind || "自动识别")}</div></div>`);
+      }catch(err){ toast((err.body && err.body.error) || err.message); }
+      return;
+    }
+    utBtn.disabled = true;
+    try{
+      const j = await post("/api/urltake", { action: act });
+      // 直接把响应里的 status 写进 STATE 再重画，不依赖 refresh()。
+      // refresh() 有两个短路：document.hidden 和 busy（刚好有轮询在跑），
+      // 命中任何一个就立刻返回、STATE 还是旧的 —— 表现就是"提示注册成功，
+      // 状态栏还写着未注册"。这类"两个数据源谁先到"的问题，
+      // 用服务端刚返回的那份是最省事的解法。
+      if(j.ok && STATE){
+        // 三个字段一起更新。只改 status 的话，模板里读的顶层 registered
+        // 还是旧的 —— 表现是"点了注册，界面过一拍才变"。
+        const st = j.status || {};
+        STATE.urltake = Object.assign({}, STATE.urltake || {}, {
+          status: st,
+          registered: !!st.registered,
+          stale: !!st.stale,
+        });
+      }
+      toast(j.ok ? (act === "register" ? "已注册，现在网页能唤起汲流了" : "已取消注册")
+                 : (j.error || "操作失败"), !!j.ok);
+      renderDrawer();
+      refresh().catch(() => {});      // 后台补一次完整状态，不在这里等
+    }catch(err){ toast((err.body && err.body.error) || err.message); }
+    finally{ utBtn.disabled = false; }
+    return;
+  }
+
+  // 跨页直达：摘要里的「调整」跳到真正的设置页，省得用户自己找
+  const gt = e.target.closest("button[data-goto]");
+  if(gt){ gotoTab(gt.dataset.goto); return; }
+
+  // 引擎页的「下载安装」：下官方包 → 解出 exe → 放进 bin/
+  const fbtn = e.target.closest("button[data-fetch]");
+  if(fbtn){
+    const k = fbtn.dataset.fetch;
+    try{
+      const r = await post("/api/tools/fetch", {key: k});
+      if(!r.ok){ toast(r.error || "启动下载失败"); return; }
+      await watchFetch(k, fbtn, "");
+    }catch(err){ toast((err.body && err.body.error) || err.message); }
     return;
   }
 
@@ -2379,7 +3669,7 @@ $("#drawerBody").addEventListener("click", async (e) => {
   if(e.target.id === "ckSave"){
     try{
       const j = await post("/api/cookies/save", {text: $("#ckText").value, label: $("#ckLabel").value || "imported"});
-      toast("已保存：" + j.path, true); refresh(); renderDrawer();
+      toast("已保存：" + j.path, true); await refresh(); renderDrawer();
     }catch(err){ toast(err.message); }
     return;
   }
@@ -2388,14 +3678,205 @@ $("#drawerBody").addEventListener("click", async (e) => {
     toast("正在从 " + br + " 读取 cookie…");
     try{
       const j = await post("/api/cookies/from-browser", {browser: br, profile: $("#c_cookie_browser_profile")?.value || ""});
-      toast("已导出：" + j.path, true); refresh(); renderDrawer();
+      toast("已导出：" + j.path, true); await refresh(); renderDrawer();
     }catch(err){ toast(err.message); }
     return;
   }
   const del = e.target.closest("button[data-ckdel]");
   if(del){
-    try{ await post("/api/cookies/delete", {path: del.dataset.ckdel}); toast("已删除", true); refresh(); renderDrawer(); }
+    try{ await post("/api/cookies/delete", {path: del.dataset.ckdel}); toast("已删除", true); await refresh(); renderDrawer(); }
     catch(err){ toast(err.message); }
+  }
+});
+
+/* ==================== 扩展页交互 ==================== */
+
+// 队列：保存整表（前端把每行的数收集起来，一条条 upsert）
+document.addEventListener("click", async (e) => {
+  const t = e.target;
+
+  if(t.id === "saveQ"){
+    const rows = $$("#drawerBody [data-q]").reduce((acc, el) => {
+      const qid = el.dataset.qid;
+      acc[qid] = acc[qid] || {id: qid};
+      const k = el.dataset.q;
+      if(k === "speed_mb") acc[qid].speed_limit = Math.round((parseFloat(el.value) || 0) * 1048576);
+      else if(k === "max_concurrent") acc[qid].max_concurrent = Number(el.value) || 1;
+      else if(k === "priority") acc[qid].priority = Number(el.value) || 0;
+      else acc[qid].name = el.value;
+      return acc;
+    }, {});
+    try{
+      for(const q of Object.values(rows)) await post("/api/queues", q);
+      toast("队列已保存", true); refresh();
+    }catch(err){ toast("保存失败：" + err.message); }
+    return;
+  }
+
+  if(t.id === "addQ"){
+    const id = ($("#newQid")?.value || "").trim();
+    if(!id) return toast("先填个 id");
+    try{
+      await post("/api/queues", {id, name: ($("#newQname")?.value || id).trim(),
+                                max_concurrent: 2, priority: 0});
+      toast("已添加", true); await refresh(); renderDrawer();
+    }catch(err){ toast(err.message); }
+    return;
+  }
+
+  const qd = t.closest("[data-qdel]");
+  if(qd){
+    try{ await post("/api/queues/remove", {id: qd.dataset.qdel});
+      toast("已删除", true); await refresh(); renderDrawer(); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+
+  // —— 更新 ——
+  if(t.id === "btnUpdCheck"){
+    toast("正在检查更新…");
+    try{
+      const j = await api("/api/update/check?force=1");
+      // 返回字段是 has_update / latest，以前读 available / info.版本，
+      // 结果永远显示"已是最新版本"。
+      if(j.ok && j.has_update) toast(`发现新版本 ${j.latest || ""}`, true);
+      else if(j.ok) toast(j.reason || "已是最新版本", true);
+      else toast(j.error || "检查失败");
+    }catch(err){ toast(err.message); }
+    return;
+  }
+  if(t.id === "btnUpdDl"){
+    try{ const j = await post("/api/update/download", {});
+      toast(j.ok ? "已下载，退出时自动安装" : (j.error || "下载失败"), !!j.ok); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+  if(t.id === "btnUpdApply"){
+    try{ const j = await post("/api/update/apply", {});
+      toast(j.ok ? "正在替换并重启…" : (j.error || "没有待安装的更新"), !!j.ok); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+
+  // —— 右键菜单 / 拖拽窗 ——
+  if(t.id === "c_shell_menu" || t.id === "dropToggle"){
+    const on = t.checked;
+    const url = t.id === "dropToggle" ? "/api/drop" : "/api/shell";
+    try{
+      const j = await post(url, {on});
+      toast(j.ok ? (on ? "已开启" : "已关闭") : (j.error || "操作失败"), !!j.ok);
+      await refresh(); renderDrawer();
+    }catch(err){ toast(err.message); }
+    return;
+  }
+
+  if(t.id === "btnFinCancel"){
+    try{ const j = await post("/api/finish/cancel", {});
+      toast(j.ok === false ? (j.error || "没有进行中的关机") : "已取消", true); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+
+  // —— 站点预设 ——
+  if(t.id === "psAdd"){
+    const host = ($("#psHost")?.value || "").trim();
+    if(!host) return toast("先填域名");
+    try{
+      const j = await post("/api/presets", {url: host, opts: {qn: $("#psQn")?.value || ""}});
+      toast(j.ok ? "已记住" : (j.error || "保存失败"), !!j.ok);
+      await refresh(); renderDrawer();
+    }catch(err){ toast(err.message); }
+    return;
+  }
+  const psd = t.closest("[data-psdel]");
+  if(psd){
+    try{
+      await post("/api/presets", {url: psd.dataset.psdel, forget: true});
+      toast("已删除", true); await refresh(); renderDrawer();
+    }catch(err){ toast(err.message); }
+    return;
+  }
+
+  // —— 通知渠道 ——
+  if(t.id === "chAdd"){
+    const body = {type: $("#chType")?.value, name: $("#chName")?.value,
+                  url: $("#chUrl")?.value, token: $("#chToken")?.value};
+    try{
+      const j = await post("/api/channels", body);
+      toast(j.ok ? "已添加" : (j.error || "添加失败"), !!j.ok);
+      await refresh(); renderDrawer();
+    }catch(err){ toast(err.message); }
+    return;
+  }
+  if(t.id === "chTest"){
+    try{ const j = await post("/api/channels/test", {});
+      toast(j.ok ? `已发送（${j.sent}/${j.total}）` : (j.error || "全部失败"), !!j.ok); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+  const cd = t.closest("[data-chdel]");
+  if(cd){
+    try{ await post("/api/channels/remove", {id: cd.dataset.chdel});
+      toast("已删除", true); await refresh(); renderDrawer(); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+
+  // —— 插件 ——
+  if(t.id === "plgReload"){
+    try{ const j = await post("/api/plugins/reload", {});
+      toast(`已重新加载 ${(j.plugins || []).length} 个`, true); await refresh(); renderDrawer(); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+  if(t.id === "plgOpen"){
+    try{ const j = await post("/api/open-path",
+        {path: STATE?.features?.plugins?.dir || "", mode: "folder"});
+      if(!j.ok) toast(j.error || "打不开"); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+  const pt = t.closest("[data-plgtoggle]");
+  if(pt){
+    try{ const j = await post("/api/plugins/toggle",
+        {key: pt.dataset.plgtoggle, on: pt.dataset.plgon === "1"});
+      toast(j.ok ? "已切换" : (j.error || "失败"), !!j.ok); await refresh(); renderDrawer(); }
+    catch(err){ toast(err.message); }
+    return;
+  }
+
+  // —— 导入导出 ——
+  const exp = t.closest("[data-exp]");
+  if(exp){
+    try{
+      const j = await post("/api/tasks/export", {fmt: exp.dataset.exp});
+      if(!j.ok) return toast(j.error || "导出失败");
+      const box = $("#impBox");
+      if(box) box.value = j.text || "";
+      toast(`已导出 ${j.count} 条到下面的框里`, true);
+    }catch(err){ toast(err.message); }
+    return;
+  }
+  if(t.id === "impBtn"){
+    const text = $("#impBox")?.value || "";
+    if(!text.trim()) return toast("先把内容粘进来");
+    try{
+      const j = await post("/api/tasks/import", {text, start: false});
+      if(!j.ok) return toast(j.error || "导入失败");
+      toast(`导入 ${j.created} 条（已暂停）` + (j.errors?.length ? `，${j.errors.length} 条失败` : ""), true);
+      refresh();
+    }catch(err){ toast(err.message); }
+    return;
+  }
+  if(t.id === "expDl"){
+    const text = $("#impBox")?.value || "";
+    if(!text.trim()) return toast("先导出或粘贴内容");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], {type: "text/plain;charset=utf-8"}));
+    a.download = "jiliu-tasks.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    return;
   }
 });
 
@@ -2446,7 +3927,12 @@ $("#cfgSave").onclick = async () => {
   try{
     await post("/api/config", patch);
     toast("设置已保存", true);
-    refresh();
+    await refresh();
+    // 主题/语言是「保存即生效」的东西，改完不该还要重启才看得见
+    if(patch.ui_theme !== undefined || patch.ui_mode !== undefined
+       || patch.ui_accent !== undefined){
+      if(STATE?.theme) applyTheme(STATE.theme, STATE.theme.mode);
+    }
     renderDrawer();
   }catch(e){ toast(e.message); }
 };
@@ -2473,7 +3959,6 @@ document.addEventListener("keydown", e => {
   }
 });
 
-$("#mAdd").onclick = () => $("#url").focus();
 $("#mClear").onclick = async () => {
   try{ const j = await post("/api/tasks/clear-finished"); toast("清理了 " + j.removed + " 条", true); refresh(); }
   catch(e){ toast(e.message); }
@@ -2532,7 +4017,22 @@ window.addEventListener("drop", async e => {
 /* ==================== 启动 ==================== */
 
 refresh();
-setInterval(refresh, 1000);
+// 轮询自适应：有任务在跑时 1 秒一次，空闲时 3 秒一次。
+// 以前无条件 1 秒全量拉，窗口常开一天就是 8 万次请求。
+let _pollTimer = null;
+function schedulePoll(){
+  clearTimeout(_pollTimer);
+  const active = Array.isArray(STATE?.tasks) &&
+    STATE.tasks.some(t => t.status === "running" || t.status === "queued");
+  _pollTimer = setTimeout(async () => {
+    await refresh();
+    schedulePoll();
+  }, active ? 1000 : 3000);
+}
+schedulePoll();
+document.addEventListener("visibilitychange", () => {
+  if(!document.hidden) refresh();
+});
 </script>
 </body>
 </html>

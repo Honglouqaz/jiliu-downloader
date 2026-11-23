@@ -3,6 +3,13 @@ build/
 dist/
 *.spec
 
+# 随 Release 分发的第三方二进制（aria2c 为 GPL，不入源码库）
+bin/
+
+# 内部审计 / 排期文档，不对外
+优化方案-*.html
+_audit/
+
 # 打包用的第三方依赖（PyInstaller 本体、内置的 yt-dlp 源码）。
 # 体积大且可用 scripts/minipip.py 复现，不入库。
 buildtools/

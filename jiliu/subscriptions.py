@@ -21,28 +21,22 @@ import time
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
-from . import config as _config, feed
+from . import atomicio, config as _config, feed
 
 STORE = _config.HOME / "subscriptions.json"
 _lock = threading.RLock()
 
 
 def _read() -> List[Dict[str, Any]]:
-    try:
-        data = json.loads(STORE.read_text(encoding="utf-8"))
-        return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
-    except Exception:  # noqa: BLE001
-        return []
+    data = atomicio.read_json(STORE, default=[])
+    return [x for x in data if isinstance(x, dict)] if isinstance(data, list) else []
 
 
 def _write(items: List[Dict[str, Any]]) -> None:
     try:
-        STORE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = pathlib.Path(str(STORE) + ".tmp")
-        tmp.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(STORE)
-    except Exception:  # noqa: BLE001
-        pass
+        atomicio.write_json(STORE, items, indent=2)
+    except Exception as exc:  # noqa: BLE001
+        atomicio.warn(f"订阅表保存失败：{type(exc).__name__}: {exc}")
 
 
 def raw_list() -> List[Dict[str, Any]]:
@@ -207,11 +201,26 @@ class Watcher:
                 continue
             fresh = res.get("new") or []
             n = 0
+            failed = False
             if fresh:
                 try:
                     n = int(self.on_new(sub, fresh) or 0)
-                except Exception:  # noqa: BLE001
+                except Exception as exc:  # noqa: BLE001
                     n = 0
+                    failed = True
+                    details.append({"id": sub["id"], "ok": False,
+                                    "error": f"建任务失败：{exc}"})
+            if failed:
+                # 建任务失败时绝不能把这批条目标成已见：下一轮会被
+                # seen 挡住，新内容永久丢失。只更新检查时间，保留条目。
+                with _lock:
+                    items = _read()
+                    for x in items:
+                        if x.get("id") == sub.get("id"):
+                            x["last_check"] = time.time()
+                            x["last_error"] = "有新条目但建任务失败"
+                    _write(items)
+                continue
             mark_checked(sub["id"], fresh, "")
             added += n
             details.append({"id": sub["id"], "title": sub.get("title"),

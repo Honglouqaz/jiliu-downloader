@@ -19,7 +19,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
-from . import config as _config
+from . import atomicio, config as _config
 
 # --------------------------------------------------------------------------
 # 变量表
@@ -188,12 +188,9 @@ class History:
             return self._data
         rows: List[Dict[str, Any]] = []
         if self.path.is_file():
-            try:
-                raw = json.loads(self.path.read_text(encoding="utf-8"))
-                if isinstance(raw, list):
-                    rows = [r for r in raw if isinstance(r, dict)]
-            except Exception:
-                rows = []
+            raw = atomicio.read_json(self.path, default=[])
+            if isinstance(raw, list):
+                rows = [r for r in raw if isinstance(r, dict)]
         self._data = rows
         return rows
 
@@ -201,9 +198,8 @@ class History:
         rows = self._load()
         if len(rows) > self.limit:
             del rows[: len(rows) - self.limit]
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(rows, ensure_ascii=False, indent=1), encoding="utf-8")
+        # 原子写：history 以前是直接 write_text，崩一次就整份作废
+        atomicio.write_json(self.path, rows, indent=1)
 
     @staticmethod
     def key_of(site: str, vid: str) -> str:

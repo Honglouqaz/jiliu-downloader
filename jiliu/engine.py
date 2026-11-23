@@ -47,6 +47,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from . import atomicio as _atomicio
+
 READ_SIZE = 256 * 1024
 STATE_SUFFIX = ".jiliu.json"
 # 暂存文件后缀。最终文件在下载完成并通过校验前不存在
@@ -113,9 +115,28 @@ def _filename_from_disposition(value: str) -> str:
     return ""
 
 
+_WIN_RESERVED = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+# 单段文件名上限。Windows 总路径 260，留出目录与 .part/.jiliu.json 后缀的余量。
+_NAME_STEM_MAX = 150
+
+
 def _safe_name(name: str) -> str:
     name = re.sub(r'[\\/:*?"<>|\r\n\t]', "_", name).strip().strip(".")
-    return name or "download.bin"
+    if not name:
+        return "download.bin"
+    stem, dot, ext = name.rpartition(".")
+    if not dot:            # 没有扩展名
+        stem, ext = name, ""
+    if stem.upper() in _WIN_RESERVED:
+        # Windows 上叫 CON 的文件根本创建不了，加前缀绕开
+        stem = "_" + stem
+    if len(stem) > _NAME_STEM_MAX:
+        stem = stem[:_NAME_STEM_MAX].rstrip()
+    return f"{stem}.{ext}" if ext else stem
 
 
 def unique_path(dest: pathlib.Path) -> pathlib.Path:
@@ -193,11 +214,39 @@ def _base_headers(cfg: Dict[str, Any], extra: Optional[Dict[str, str]] = None) -
     return h
 
 
-def probe(url: str, cfg: Dict[str, Any], timeout: Optional[int] = None) -> ProbeResult:
+def _is_loopback(url: str) -> bool:
+    try:
+        host = (urllib.parse.urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    return (host in ("localhost", "::1", "0.0.0.0")
+            or host == "127.0.0.1" or host.startswith("127.")
+            or host.endswith(".localhost"))
+
+
+_NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def urlopen(req, timeout: float = 30.0):
+    """统一的 urlopen。
+
+    本机地址（127.0.0.1 / localhost）**一律不走代理**。
+    不这么做的后果很具体：用户机器上有 HTTP_PROXY 时，连自己转发到
+    localhost 的直链（内网 NAS、aria2 回调、扩展的本地端口）都会被送去
+    代理，回来一个 502，看着像"服务坏了"。
+    """
+    url = getattr(req, "full_url", "") or ""
+    if _is_loopback(url):
+        return _NO_PROXY_OPENER.open(req, timeout=timeout)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def probe(url: str, cfg: Dict[str, Any], timeout: Optional[int] = None,
+          headers: Optional[Dict[str, str]] = None) -> ProbeResult:
     """探测资源信息。先 HEAD，不行再用 `Range: bytes=0-0` 的 GET。"""
     timeout = timeout or int(cfg.get("timeout", 30))
     res = ProbeResult(url=url, final_url=url)
-    headers = _base_headers(cfg)
+    headers = _base_headers(cfg, headers)
 
     def absorb(h) -> None:
         cl = h.get("Content-Length")
@@ -218,7 +267,7 @@ def probe(url: str, cfg: Dict[str, Any], timeout: Optional[int] = None) -> Probe
     # 1) HEAD
     try:
         req = urllib.request.Request(url, headers=headers, method="HEAD")
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urlopen(req, timeout=timeout) as r:
             res.final_url = r.geturl()
             res.status = getattr(r, "status", r.getcode())
             absorb(r.headers)
@@ -236,7 +285,7 @@ def probe(url: str, cfg: Dict[str, Any], timeout: Optional[int] = None) -> Probe
             h2 = dict(headers)
             h2["Range"] = "bytes=0-1023"
             req = urllib.request.Request(url, headers=h2)
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with urlopen(req, timeout=timeout) as r:
                 res.final_url = r.geturl()
                 code = getattr(r, "status", r.getcode())
                 res.status = code
@@ -307,10 +356,12 @@ class RateLimiter:
             self.last = time.monotonic()
 
     def acquire(self, n: int) -> None:
-        if self.rate <= 0:
-            return
         while True:
             with self.lock:
+                # 必须在锁内再看一次：另一个线程可能刚把限速改成 0
+                # （时段限速切换），此时 sleep 醒来再算 need 就是除零。
+                if self.rate <= 0:
+                    return
                 now = time.monotonic()
                 self.allowance = min(self.rate, self.allowance + (now - self.last) * self.rate)
                 self.last = now
@@ -345,6 +396,7 @@ class RangeDownloader:
         chunk_size: Optional[int] = None,
         verify_hash: bool = False,
         expected_sha256: str = "",
+        mirrors: Optional[List[str]] = None,
     ):
         from . import config as _config
 
@@ -402,6 +454,27 @@ class RangeDownloader:
         self._initialized = False
 
         self._threads: List[threading.Thread] = []
+
+        # ---- 自适应并发 ----
+        # 固定 8 线程是个折中：对快的源不够用，对慢的源又是白开。
+        # 做法是让每个连接自己报吞吐，最快与最慢差 3 倍以上就再加一根 ——
+        # 但加过的上限是初始线程数的 2 倍，不会无限膨胀。
+        self.adaptive = bool(self.cfg.get("adaptive_conn", True))
+        self._worker_speed: Dict[int, float] = {}
+        self._worker_last: Dict[int, Tuple[float, int]] = {}
+        self._alive = 0
+        self._extra = 0
+        self._max_workers = max(1, self.threads * 2)
+        self._last_scale = 0.0
+        self._last_429 = 0.0
+        # ---- 多镜像 ----
+        # 同一个文件有多个下载地址时，分片轮流从各源领活；
+        # 某个源连续失败 3 次就剔除，剩下的继续跑，任务不中断。
+        self.mirrors = [str(m).strip() for m in (mirrors or []) if str(m).strip()]
+        self._seg_source: Dict[Tuple[int, int], str] = {}
+        self._source_fails: Dict[str, int] = {}
+        self._dead_sources: set = set()
+        self._rr_source = 0
 
     # ---------------- 生命周期 ----------------
 
@@ -547,12 +620,30 @@ class RangeDownloader:
         try:
             os.replace(self.work_path, self.dest)
         except OSError:
-            shutil.move(str(self.work_path), str(self.dest))
+            # 跨盘：先 copy 到目标盘的临时名，成功后再原子换名。
+            # 直接 shutil.move 在盘满/断电时会留下半截目标文件，
+            # 与「搬运前最终文件始终不存在」的承诺矛盾。
+            tmp = self.dest.with_name(self.dest.name + ".jiliu-move.tmp")
+            try:
+                shutil.copyfile(self.work_path, tmp)
+                os.replace(tmp, self.dest)
+            finally:
+                try:
+                    if tmp.exists():
+                        tmp.unlink()
+                except OSError:
+                    pass
+            try:
+                self.work_path.unlink()
+            except OSError:
+                pass
         self.work_path = self.dest
 
     # ---------------- 状态文件 ----------------
 
     def _save_state(self) -> None:
+        if getattr(self, "_state_closed", False):
+            return          # 任务已收尾，别再把 sidecar 写回来
         with self._lock:
             remaining = sorted(self._pending + list(self._inflight.keys()), key=lambda x: x[0])
         data = {
@@ -565,9 +656,9 @@ class RangeDownloader:
             "updated": time.time(),
         }
         try:
-            tmp = pathlib.Path(str(self.state_path) + ".tmp")
-            tmp.write_text(json.dumps(data), encoding="utf-8")
-            os.replace(tmp, self.state_path)
+            # 走统一原子写：sidecar 被写坏等于断点续传作废。
+            # backup=False —— 每 3 秒落一次盘，不需要再留一份 .bak。
+            _atomicio.write_json(self.state_path, data, indent=0, backup=False)
         except Exception as exc:  # noqa: BLE001
             self._log(f"状态写入失败: {exc}")
 
@@ -601,8 +692,38 @@ class RangeDownloader:
         if not rem:
             return False
 
-        self._pending = [(int(s), int(e)) for s, e in rem]
-        self._resumed_bytes = probe_res.size - sum(e - s + 1 for s, e in self._pending)
+        # .part 被外部截断（杀毒隔离 / 磁盘清理 / 手动恢复不全）时，
+        # 缺口不在 remaining 里；照旧 seek 越过 EOF 写会让 Windows 补零，
+        # 最终大小恰好等于 size，"看起来下完了"其实是坏文件。
+        try:
+            actual = self.work_path.stat().st_size
+        except OSError:
+            return False
+        if not self._legacy_inplace and actual != probe_res.size:
+            self._log(
+                f"临时文件大小 {human_size(actual)} 与预期 {human_size(probe_res.size)}"
+                f" 不符（可能被截断），放弃续传并重新下载"
+            )
+            return False
+
+        # 区间必须落在 [0, size) 内并合并重叠，避免越界写
+        clean: List[Tuple[int, int]] = []
+        top = max(0, (probe_res.size or 0) - 1)
+        for raw_s, raw_e in sorted((int(a), int(b)) for a, b in rem):
+            s0 = max(0, min(raw_s, top))
+            e0 = max(0, min(raw_e, top))
+            if s0 > e0:
+                continue
+            if clean and s0 <= clean[-1][1] + 1:
+                clean[-1] = (clean[-1][0], max(clean[-1][1], e0))
+            else:
+                clean.append((s0, e0))
+        if not clean:
+            return False
+
+        self._pending = clean
+        self._resumed_bytes = max(
+            0, probe_res.size - sum(e - s + 1 for s, e in self._pending))
         self._initialized = True
         self._log(
             f"断点续传：已存在 {human_size(self._resumed_bytes)}"
@@ -611,6 +732,7 @@ class RangeDownloader:
         return True
 
     def _clear_state(self) -> None:
+        self._state_closed = True
         try:
             if self.state_path.exists():
                 self.state_path.unlink()
@@ -618,6 +740,98 @@ class RangeDownloader:
             pass
 
     # ---------------- 区间池 ----------------
+
+    # ---------------- 多源 ----------------
+
+    def _sources(self) -> List[str]:
+        out = [self.url] + [m for m in self.mirrors if m != self.url]
+        return [u for u in out if u not in self._dead_sources]
+
+    def _pick_source(self) -> str:
+        srcs = self._sources()
+        if not srcs:
+            return self.url
+        if len(srcs) == 1:
+            return srcs[0]
+        u = srcs[self._rr_source % len(srcs)]
+        self._rr_source += 1
+        return u
+
+    def _source_failed(self, url: str) -> None:
+        if url == self.url and len(self._sources()) <= 1:
+            return
+        self._source_fails[url] = self._source_fails.get(url, 0) + 1
+        if self._source_fails[url] >= 3 and url not in self._dead_sources:
+            self._dead_sources.add(url)
+            self._log(f"源 {url} 连续失败 3 次，已剔除（剩余 {len(self._sources())} 个）")
+
+    # ---------------- 自适应并发 ----------------
+
+    def _note_worker_speed(self, wid: int, pos: int) -> None:
+        """按连接维护吞吐 EMA。只在读数据时调用，开销可忽略。"""
+        now = time.monotonic()
+        last = self._worker_last.get(wid)
+        self._worker_last[wid] = (now, pos)
+        if last is None:
+            return
+        dt = now - last[0]
+        if dt < 0.2:
+            return
+        inst = max(0.0, (pos - last[1]) / dt)
+        prev = self._worker_speed.get(wid)
+        self._worker_speed[wid] = inst if prev is None else prev * 0.7 + inst * 0.3
+
+    def _spawn_worker(self) -> None:
+        with self._lock:
+            if self._alive >= self._max_workers:
+                return
+            self._alive += 1
+            self._extra += 1
+            wid = len(self._worker_speed) + 100 + self._extra
+        t = threading.Thread(target=self._worker, args=(wid,), daemon=True,
+                             name=f"jiliu-w{wid}")
+        t.start()
+        self._threads.append(t)
+
+    def _maybe_scale(self) -> None:
+        """最快的连接比最慢的快 3 倍以上 → 再加一根。
+
+        三条刹车，缺一条就会把源惹毛：
+          1. 刚吃过 429/503 的 10 秒内不加（人家明说了慢点）
+          2. 待办区间不足 2 块时不加（没活可分，加了也是空转）
+          3. 到达初始线程数的 2 倍就停（再加下去 CDN 会开始掐连接）
+        """
+        if not self.adaptive or not self.accept_ranges or self.size is None:
+            return
+        now = time.monotonic()
+        if now - self._last_429 < 10.0:
+            return
+        if now - self._last_scale < 3.0:
+            return
+        speeds = [v for v in self._worker_speed.values() if v > 1024]
+        if len(speeds) < 3:
+            return
+        lo, hi = min(speeds), max(speeds)
+        if hi < lo * 3:
+            return
+        with self._lock:
+            if len(self._pending) < 2 or self._alive >= self._max_workers:
+                return
+        self._last_scale = now
+        self._log(f"连接快慢差 {hi / max(lo, 1):.1f} 倍，增加连接数（{self._alive} → {self._alive + 1}）")
+        self._spawn_worker()
+
+    def _throttled(self, retry_after: float = 0.0) -> None:
+        """被限速：退避 + 把可加的上限砍一半。"""
+        self._last_429 = time.monotonic()
+        self._max_workers = max(self.threads, self._max_workers // 2)
+        wait = retry_after if retry_after > 0 else min(8.0, 2.0 + self._max_workers)
+        self._log(f"源返回限速，退避 {wait:.0f}s，连接上限降到 {self._max_workers}")
+        end = time.monotonic() + wait
+        while time.monotonic() < end:
+            if self._cancelled.is_set():
+                raise _Cancelled()
+            time.sleep(0.2)
 
     def _init_ranges(self, size: int, threads: int) -> None:
         """初始化区间池。
@@ -672,15 +886,18 @@ class RangeDownloader:
                 self._pending.append(rest)
             self._inflight[seg] = 0
             self._segments_created += 1
+            self._seg_source[seg] = self._pick_source()
         return seg
 
     def _complete(self, seg: Tuple[int, int]) -> None:
         with self._lock:
             self._inflight.pop(seg, None)
+            self._seg_source.pop(seg, None)
 
     def _release(self, seg: Tuple[int, int]) -> None:
         with self._lock:
             self._inflight.pop(seg, None)
+            self._seg_source.pop(seg, None)
             if seg[0] <= seg[1]:
                 self._pending.append(seg)
 
@@ -691,18 +908,21 @@ class RangeDownloader:
 
     # ---------------- 实际抓取 ----------------
 
-    def _open(self, headers: Dict[str, str]):
-        req = urllib.request.Request(self.url, headers=headers)
-        return urllib.request.urlopen(req, timeout=self.timeout)
+    def _open(self, headers: Dict[str, str], url: Optional[str] = None):
+        req = urllib.request.Request(url or self.url, headers=headers)
+        return urlopen(req, timeout=self.timeout)
 
-    def _fetch_range(self, fh, seg: Tuple[int, int]) -> int:
+    def _fetch_range(self, fh, seg: Tuple[int, int], wid: int = 0) -> int:
         """把 seg 区间写进 fh。返回实际完成到的下一个位置（e+1 表示写满）。
 
         区间内自带重试：失败后从 pos 继续，不会重下已经写好的部分。
+        有多个镜像时，失败会先换源；换完还失败才算这个区间失败。
         """
         s, e = seg
         pos = s
         attempt = 0
+        switches = 0          # 换源次数单独计数：以前和 attempt 相互抵消，
+        url = self._seg_source.get(seg) or self.url  # 「所有源都失败」的保护永远不触发
 
         while pos <= e:
             if self._cancelled.is_set():
@@ -716,8 +936,19 @@ class RangeDownloader:
             headers["Range"] = f"bytes={pos}-{e}"
 
             try:
-                with self._open(headers) as resp:
+                with self._open(headers, url) as resp:
                     status = getattr(resp, "status", resp.getcode())
+
+                    # 429 / 503：先退避再加，别硬顶
+                    if status in (429, 503):
+                        ra = 0.0
+                        try:
+                            ra = float(resp.headers.get("Retry-After") or 0)
+                        except Exception:
+                            ra = 0.0
+                        self._throttled(ra)
+                        raise DownloadError(f"HTTP {status}（已退避）")
+
                     if status not in (200, 206):
                         raise DownloadError(f"HTTP {status}")
                     if status == 200 and pos > 0:
@@ -743,16 +974,44 @@ class RangeDownloader:
                         buf = resp.read(min(READ_SIZE, e - pos + 1))
                         if not buf:
                             break
+                        if self._source_fails.get(url):
+                            # 拿到数据就说明这个源活着，清零"连续失败"计数，
+                            # 否则偶发超时会累积成误杀。
+                            self._source_fails[url] = 0
                         if self.limiter is not None:
                             self.limiter.acquire(len(buf))
                         fh.write(buf)
                         pos += len(buf)
                         self._note_written(seg, len(buf))
+                        self._note_worker_speed(wid, pos)
                     return pos
             except _Cancelled:
                 raise
             except Exception as exc:  # noqa: BLE001
                 attempt += 1
+                srcs = self._sources()
+                # 当前源可能刚被别的线程判定死亡并剔除 —— 这时候不能
+                # 继续拿它重试（会一直连一个已经放弃的地址）
+                if url not in srcs and srcs:
+                    url = self._pick_source()
+                    self._seg_source[seg] = url
+                    attempt -= 1
+                    self._log(f"分片 {seg} 原源已剔除，改走 {url}")
+                    continue
+                # 有别的源先换源：一个 CDN 断流不该让整个任务失败
+                if len(srcs) > 1:
+                    self._source_failed(url)
+                    url = self._pick_source()
+                    self._seg_source[seg] = url
+                    switches += 1
+                    # 换源不消耗重试配额，但必须有限次 + 退避：
+                    # 所有镜像都坏时，零延迟循环等于对源站做 DDoS。
+                    if switches > max(3 * len(srcs), 6):
+                        raise DownloadError(
+                            f"分片 {seg} 所有源均失败（换源 {switches} 次）: {exc}") from exc
+                    time.sleep(min(2 ** min(switches, 3), 8))
+                    self._log(f"分片 {seg} 换源重试 → {url}")
+                    continue
                 if attempt > self.max_retries:
                     raise DownloadError(f"分片 {seg} 重试 {self.max_retries} 次仍失败: {exc}") from exc
                 self._log(f"分片 {seg} 第 {attempt} 次失败（{exc}），{min(2 ** attempt, 8)}s 后从 {pos} 续传")
@@ -774,7 +1033,7 @@ class RangeDownloader:
                     return
                 pos = seg[0]
                 try:
-                    pos = self._fetch_range(fh, seg)
+                    pos = self._fetch_range(fh, seg, wid)
                     self._complete(seg)
                 except _Cancelled:
                     if pos <= seg[1]:
@@ -795,13 +1054,31 @@ class RangeDownloader:
                     fh.close()
                 except Exception:
                     pass
+            with self._lock:
+                self._alive = max(0, self._alive - 1)
 
     def _monitor(self, stop: threading.Event) -> None:
+        last_save = time.monotonic()
         while not stop.wait(0.2):
             self._samples.append((time.monotonic(), self.done_bytes()))
             if len(self._samples) > 12:
                 self._samples.pop(0)
             self._emit()
+            try:
+                self._maybe_scale()
+            except Exception:
+                pass
+            # 周期性落盘：以前只在开始/取消/结束时写 sidecar，
+            # 断电或强杀后恢复会从"任务开始时"重下。3 秒一次足够，
+            # diff 在 _save_state 内部随区间池自然收敛。
+            now = time.monotonic()
+            if now - last_save >= 3.0:
+                last_save = now
+                try:
+                    if self._initialized and self.size:
+                        self._save_state()
+                except Exception:
+                    pass
 
     # ---------------- 未知长度 ----------------
 
@@ -920,14 +1197,29 @@ class RangeDownloader:
 
         try:
             self._threads = []
+            self._alive = self.threads
             for i in range(self.threads):
                 t = threading.Thread(target=self._worker, args=(i,), daemon=True, name=f"jiliu-w{i}")
                 t.start()
                 self._threads.append(t)
-            for t in self._threads:
-                t.join()
+            # 等所有线程结束。注意不能只 join 初始那批 ——
+            # 自适应并发会在运行中补新线程进来（见 _spawn_worker），
+            # 所以要循环到 _alive 归零。
+            while True:
+                with self._lock:
+                    alive = self._alive
+                if alive <= 0:
+                    break
+                for t in list(self._threads):
+                    t.join(timeout=0.3)
+                if self._cancelled.is_set() and self._alive <= 0:
+                    break
         finally:
             stop_mon.set()
+            # 等监视线程退干净再收尾：它每 3 秒会写一次 sidecar，
+            # 如果 _clear_state 之后它才落盘，会留下一个"已完成"的
+            # 假断点，下次续传直接判定无可续而重下。
+            mon.join(timeout=1.5)
             self._finished_at = time.monotonic()
 
         # 收尾

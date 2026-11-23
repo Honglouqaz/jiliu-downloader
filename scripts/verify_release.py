@@ -113,9 +113,30 @@ want = ["jiliu.exe", "portable", "version.txt", "启动.cmd", "README.md",
         "LICENSE", "使用说明.html", "bin/放这里.txt"]
 for w in want:
     check(f"便携包含 {w}", (pd / w).is_file())
-# onedir：_internal/ 目录必须跟着 exe 一起在
-check("便携包含 _internal/（onedir 运行时）", (pd / "_internal").is_dir())
-check("_internal 里 web 资源在", (pd / "_internal" / "web" / "index.html").is_file())
+# 运行时形态：onefile（当前发行形态）或 onedir（带 _internal/）。
+#
+# 这里以前硬要求 _internal/ 必须存在 —— 那是 onedir 时期的写法，打包方式
+# 一改回 onefile，这条就假失败，看着像"便携包打坏了"，其实包是好的。
+# 现在只断言"形态是明确的、exe 有实打实的体积"，两种形态都接受。
+_onedir = (pd / "_internal").is_dir()
+check("便携包运行时形态明确",
+      bool(_onedir or (pd / "jiliu.exe").is_file()),
+      "onedir（带 _internal/）" if _onedir else "onefile（web 资源在 exe 归档里）")
+if _onedir:
+    check("_internal 里 web 资源在", (pd / "_internal" / "web" / "index.html").is_file())
+else:
+    exe_mb = ((pd / "jiliu.exe").stat().st_size / 1048576
+              if (pd / "jiliu.exe").is_file() else 0)
+    check("onefile 的 exe 体积合理（>15MB，含 web/ 与 bin/）", exe_mb > 15,
+          f"{exe_mb:.1f} MB")
+
+# 1.9.3 起协议处理器是独立的轻量 exe。缺了不算坏包（会退回主程序，
+# 只是慢），但发行包里应该带上 —— 少了它这个功能等于打了折。
+check("便携包含协议唤起器 jiliu-wake.exe", (pd / "jiliu-wake.exe").is_file())
+if (pd / "jiliu-wake.exe").is_file():
+    wake_mb = (pd / "jiliu-wake.exe").stat().st_size / 1048576
+    check("唤起器体积在 16MB 以内（超过就失去意义）", wake_mb < 16,
+          f"{wake_mb:.1f} MB")
 for w in ("extension/manifest.json", "extension/background.js",
           "extension/inject.js", "extension/popup.html",
           "extension/icons/icon128.png",

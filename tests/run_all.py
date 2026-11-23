@@ -25,7 +25,23 @@ from _fixtures import Servers, ensure_samples  # noqa: E402
 
 SUITES = ["test_protocols.py", "test_engine.py", "test_aria2.py", "test_video.py",
           "test_resource.py", "test_pipeline.py", "test_panel.py",
-          "test_platform.py"]
+          "test_platform.py",
+          # 1.8.0 新增
+          "test_update.py", "test_shell.py", "test_queues.py",
+          "test_batch.py", "test_checksum.py", "test_finish.py",
+          "test_adaptive.py", "test_live.py", "test_danmaku.py",
+          "test_transfer.py", "test_plugins.py", "test_i18n.py",
+          "test_api_features.py",
+          # 1.9.1：首屏速度（快照 / 占位 / gzip / 304）
+          "test_boot.py",
+          # 1.9.2：网页播放页解析（六种形态 / 三种明确不做 / 请求头透传）
+          "test_pagesniff.py",
+          # 1.9.3：协议唤起（解析 / 白名单 / 单实例 / 注册表）
+          "test_urltake.py",
+          # 1.9.3：轻量唤起器薄壳（分支 / 静默失败留痕 / 主程序定位）
+          "test_wake.py",
+          # 1.9.5：持久化原子性 / 服务端安全面
+          "test_atomicio.py", "test_security.py"]
 
 
 def main(argv):
@@ -64,6 +80,15 @@ def main(argv):
             m = re.search(r"结果[:：]\s*(\d+)/(\d+)\s*通过", out)
             if m:
                 p, n = int(m.group(1)), int(m.group(2))
+            else:
+                # 1.8.0 起新写的测试用「通过 N / 失败 M」，两种都认
+                m2 = re.search(r"通过\s*(\d+)\s*/\s*失败\s*(\d+)", out)
+                if not m2:
+                    m2 = None
+                p = int(m2.group(1)) if m2 else 0
+                n = p + int(m2.group(2)) if m2 else 0
+                m = m2
+            if m:
                 total_pass += p
                 total_fail += n - p
                 ok = "OK  " if p == n else "FAIL"

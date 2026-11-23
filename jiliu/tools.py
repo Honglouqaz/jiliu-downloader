@@ -21,6 +21,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 # --------------------------------------------------------------------------
@@ -237,21 +238,6 @@ def probe_all(cfg: Optional[Dict] = None, *, refresh: bool = False
         return copy.deepcopy(_PROBE_CACHE["val"])
 
     out: Dict[str, Dict[str, str]] = {}
-
-    # yt-dlp 特殊：可能是独立 exe，也可能是 python -m yt_dlp
-    yi = ytdlp_info(cfg.get("ytdlp_path", ""))
-    out["yt-dlp"] = {
-        "name": "yt-dlp",
-        "path": yi["path"],
-        "available": "yes" if yi["available"] else "no",
-        "version": yi["version"],
-        "source": yi.get("source") or ytdlp_source(yi),
-        "mode": yi["mode"],
-        "candidates": "; ".join(
-            f'{c["source"]} {c["version"]}' for c in yi.get("candidates", [])
-        ),
-    }
-
     spec = [
         ("ffmpeg", cfg.get("ffmpeg_path", ""), ["-version"]),
         ("ffprobe", "", ["-version"]),
@@ -263,9 +249,10 @@ def probe_all(cfg: Optional[Dict] = None, *, refresh: bool = False
         ("N_m3u8DL-RE", "", ["--version"]),
         ("lux", "", ["--version"]),
     ]
-    for name, override, vargs in spec:
+
+    def _one(name: str, override: str, vargs: List[str]):
         p = find(name, override)
-        out[name] = {
+        return name, {
             "name": name,
             "path": p or "",
             "available": "yes" if p else "no",
@@ -273,6 +260,29 @@ def probe_all(cfg: Optional[Dict] = None, *, refresh: bool = False
             "source": _source_of(name, p),
             "mode": "binary" if p else "-",
         }
+
+    # 全部并行。串行问下来是「yt-dlp 1.8s + ffmpeg .1 + ffprobe .1 +
+    # aria2c .2 + curl .2」，冷启动五秒上下；并行后只等于最慢的那一个。
+    # yt-dlp 单独一路（它要试多个候选），其余工具各一路。
+    with ThreadPoolExecutor(max_workers=len(spec) + 1) as ex:
+        f_y = ex.submit(ytdlp_info, cfg.get("ytdlp_path", ""))
+        futs = [ex.submit(_one, *item) for item in spec]
+
+        yi = f_y.result()
+        out["yt-dlp"] = {
+            "name": "yt-dlp",
+            "path": yi["path"],
+            "available": "yes" if yi["available"] else "no",
+            "version": yi["version"],
+            "source": yi.get("source") or ytdlp_source(yi),
+            "mode": yi["mode"],
+            "candidates": "; ".join(
+                f'{c["source"]} {c["version"]}' for c in yi.get("candidates", [])
+            ),
+        }
+        for f in futs:
+            name, row = f.result()
+            out[name] = row
 
     _PROBE_CACHE["t"] = now
     _PROBE_CACHE["key"] = key
@@ -299,6 +309,8 @@ def invalidate_probe_cache() -> None:
     _SEL_CACHE["t"] = 0.0
     _SEL_CACHE["val"] = None
     _CMD_CACHE.clear()
+    _VER_CACHE["t"] = 0.0
+    _VER_CACHE["val"] = {}
 
 
 def _source_of(name: str, path: Optional[str]) -> str:
@@ -383,6 +395,47 @@ def ytdlp_version_of_cmd(cmd: List[str]) -> str:
         return lines[0].strip() if lines else ""
     except Exception:
         return ""
+
+
+# 每个候选的 --version 结果。key 是完整命令拼起来的串。
+_VER_CACHE: Dict[str, Any] = {"t": 0.0, "val": {}}
+
+
+def _cand_key(cmd: List[str]) -> str:
+    return "\x00".join(cmd)
+
+
+def ytdlp_versions(cands: List[Dict[str, Any]],
+                   *, refresh: bool = False) -> Dict[str, str]:
+    """一批候选的版本号，并行问。
+
+    候选通常有 2–4 份（bin/、PATH、已知位置、内置模块），每一份都要
+    spawn 一次进程、等 1.5–2 秒。串行问完 5 秒起步，而这是面板首屏的
+    必经之路 —— 用户看到的第一个画面就在等它转。
+
+    子进程之间互不相干，并行问，总耗时只等于最慢的那一个。
+    结果按命令缓存：ytdlp_command（挑哪份）和 ytdlp_selected（给界面
+    展示全部候选）共用同一份，不再各自再问一遍。
+    """
+    now = time.time()
+    cache: Dict[str, str] = {}
+    if (not refresh and _VER_CACHE["val"] is not None
+            and now - _VER_CACHE["t"] < PROBE_TTL):
+        cache = dict(_VER_CACHE["val"])
+
+    todo = [c for c in cands if _cand_key(c["command"]) not in cache]
+    if todo:
+        with ThreadPoolExecutor(max_workers=min(8, len(todo))) as ex:
+            futs = [(c, ex.submit(ytdlp_version_of_cmd, c["command"]))
+                    for c in todo]
+            for c, f in futs:
+                try:
+                    cache[_cand_key(c["command"])] = f.result() or ""
+                except Exception:
+                    cache[_cand_key(c["command"])] = ""
+        _VER_CACHE["t"] = time.time()
+        _VER_CACHE["val"] = dict(cache)
+    return cache
 
 
 def _frozen_ytdlp_cmd() -> Optional[List[str]]:
@@ -490,10 +543,11 @@ def ytdlp_command(override: str = "", *, refresh: bool = False) -> Optional[List
         return list(cached) if cached else None
 
     cands = ytdlp_candidates()
+    vers = ytdlp_versions(cands, refresh=refresh)
     best: Optional[Dict[str, Any]] = None
     best_key: tuple = ()
     for c in cands:
-        v = ytdlp_version_of_cmd(c["command"])
+        v = vers.get(_cand_key(c["command"])) or ""
         if not v:
             continue
         k = version_key(v)
@@ -530,8 +584,10 @@ def ytdlp_selected(*, refresh: bool = False) -> Dict[str, Any]:
 
     chosen = None
     listing = []
-    for c in ytdlp_candidates():
-        v = ytdlp_version_of_cmd(c["command"])
+    cands = ytdlp_candidates()
+    vers = ytdlp_versions(cands, refresh=refresh)
+    for c in cands:
+        v = vers.get(_cand_key(c["command"])) or ""
         c = dict(c, version=v)
         listing.append({
             "mode": c["mode"], "source": c["source"], "version": v,

@@ -58,18 +58,26 @@ def normalize(raw: Any) -> Dict[str, Any]:
 
 
 def in_window(sched: Dict[str, Any], now: Optional[_dt.datetime] = None) -> bool:
-    """现在是否落在允许下载的时段里。支持跨午夜（22:00–06:00）。"""
+    """现在是否落在允许下载的时段里。支持跨午夜（22:00–06:00）。
+
+    跨午夜的窗口，「凌晨那一段」属于**前一天**的班次：
+    只勾周二 + 22:00–06:00 时，周三 01:00 仍应在窗口内。
+    """
     s = normalize(sched)
     now = now or _dt.datetime.now()
-    if now.weekday() not in s["days"]:
-        return False
     cur = now.hour * 60 + now.minute
     start, end = s["_start"], s["_end"]
+    days = s["days"]
     if start == end:
-        return True                      # 起止相同 = 全天
+        return now.weekday() in days     # 起止相同 = 全天
     if start < end:
-        return start <= cur < end
-    return cur >= start or cur < end     # 跨午夜
+        return now.weekday() in days and start <= cur < end
+    if cur >= start:
+        return now.weekday() in days
+    if cur < end:
+        yday = (now - _dt.timedelta(days=1)).weekday()
+        return yday in days
+    return False
 
 
 def evaluate(cfg: Dict[str, Any], now: Optional[_dt.datetime] = None) -> Dict[str, Any]:

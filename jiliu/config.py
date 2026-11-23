@@ -14,6 +14,8 @@ import pathlib
 import sys
 from typing import Any, Dict
 
+from . import atomicio as _atomicio
+
 
 def _app_dir() -> pathlib.Path:
     """程序所在目录（源码运行 = 项目根，冻结运行 = exe 所在目录）。"""
@@ -64,8 +66,13 @@ DEFAULTS: Dict[str, Any] = {
     "speed_limit": 0,
     # 面板/API 端口
     "port": 8788,
-    # 同时下载的任务数上限
-    "max_concurrent": 3,
+    # 同时下载的任务数总上限。0 = 交给队列配额决定（推荐，见 queues.py）：
+    # 每条队列自己管并发，总数就是各队列之和。填正数则是硬天花板，
+    # 队列配额再大也超不过它
+    "max_concurrent": 0,
+    # 首次启动向导走没走完。false 时首屏弹一次「三步开始下载」。
+    # 用配置项而不是「任务数为空」来判断：用户清空列表后不该被再教育一次
+    "onboarded": False,
     # 允许访问本地 API 的来源（Origin 白名单，空表示只允许扩展与本机页面）
     "allowed_origins": [],
     # 小于该大小不走多线程
@@ -73,6 +80,9 @@ DEFAULTS: Dict[str, Any] = {
     # 分片块大小上下限
     "chunk_min": 512 * 1024,
     "chunk_max": 8 * 1024 * 1024,
+    # 自适应并发：连接之间的吞吐差 3 倍以上时自动补连接（上限初始线程数 ×2）。
+    # 关掉就是固定线程数，行为与 1.7 一致
+    "adaptive_conn": True,
     # 暂存目录（学 IDM 的 TempPath）：分片先写这里，校验完再搬到下载目录。
     # 留空 = 与目标同目录，零搬运；填另一块盘可以把 IO 压力分开
     "temp_dir": "",
@@ -112,6 +122,11 @@ DEFAULTS: Dict[str, Any] = {
     "aria2_rpc_url": "",
     "aria2_rpc_secret": "",
     "motrix_rpc_secret": "",
+    # 汲流自带的 aria2 兼容 RPC 端点（/rpc）的鉴权密钥。
+    # 空 = 不鉴权（只绑 127.0.0.1；方便 LinkSwift 等本机工具直接推送）。
+    # 以前 server.py 读的就是这个键，但 DEFAULTS 里没有它 ——
+    # 用户在配置里写再多遍也不会生效，鉴权是死代码。
+    "rpc_secret": "",
 
     # 视频默认格式：bv*+ba/b 表示"最佳画质+最佳音轨，否则最佳单文件"
     "video_format": "bv*+ba/b",
@@ -228,6 +243,9 @@ DEFAULTS: Dict[str, Any] = {
     "notify_enabled": True,
     "tray_enabled": True,
     "prevent_sleep": True,
+    # 远程通知渠道（见 jiliu/channels.py）：Bark / Telegram / 企业微信 /
+    # 钉钉 / Gotify / ntfy / 自定义 POST。人不在电脑前也能知道下完了
+    "notify_channels": [],
     # 完成后执行的命令，%file% / %dir% 会被替换。留空 = 不执行
     "after_download_command": "",
     # 合集下载完生成 .m3u（播放器按顺序播）
@@ -270,13 +288,93 @@ DEFAULTS: Dict[str, Any] = {
     # 剪贴板监听（IDM 的 MonitorUrlClipboard）：默认关，开了会轮询剪贴板
     "clipboard_watch": False,
 
+    # ---- 协议唤起（见 jiliu/urltake.py）----
+    # 启动时自动把 jiliu:// 注册到 HKCU。默认开：这是「点网页链接能把
+    # 关着的程序拉起来」的唯一手段，关掉之后扩展那边就只能报错。
+    # 不做网络验证、不提权，只是往注册表写一个 URL Protocol 项。
+    "url_protocol_auto": True,
+
     # ---- 站点抓取（见 jiliu/grabber.py）----
     "grab_max_depth": 2,
     "grab_max_pages": 200,
     "grab_same_origin": True,
 
+    # ---- 站点预设（见 jiliu/presets.py）----
+    # 形如 {"bilibili.com": {"qn": 80, "codec": "avc", "container": "mp4"}}，
+    # 解析/创建视频任务时按 host 命中就套用
+    "site_presets": {},
+
     # ---- 限速预设（任务级下拉用）----
     "speed_presets": [0, 1048576, 5242880, 20971520],
+
+    # ---- 自动更新（见 jiliu/update.py）----
+    # 启动 30 秒后静默查一次 GitHub Releases，之后每 6 小时一次
+    "update_check": True,
+    # 查到新版就后台下好，退出时自动替换。默认关 —— 不打招呼就换掉
+    # 用户正在用的二进制，比「多一次点击」更不礼貌
+    "update_auto_download": False,
+    # stable = 只收正式版；beta = 连预发布版一起提示
+    "update_channel": "stable",
+    # 自建镜像 / fork 自更新用。留空 = 官方仓库
+    "update_repo": "",
+
+    # ---- 多队列（见 jiliu/queues.py）----
+    # 每条队列独立并发与限速；max_concurrent 仍是「全部相加」的总上限。
+    # 留空会自动生成「默认」与「视频」两条
+    "queues": [],
+
+    # ---- 系统集成（见 jiliu/shellmenu.py）----
+    # 右键菜单：安装版默认注册，便携版默认不注册（免留痕）
+    "shell_menu": False,
+    # 拖拽悬浮窗
+    "drop_target": False,
+
+    # ---- 完成后的动作（见 jiliu/finish.py）----
+    # none / shutdown / hibernate / sleep / lock / exit
+    "finish_action": "none",
+    # 全部任务完成后才触发（False = 任意一个任务完成就触发）
+    "finish_when_all_done": True,
+    # 触发前的可取消倒计时（秒），0 = 立即执行
+    "finish_delay": 60,
+
+    # ---- 直播流录制（见 jiliu/live.py）----
+    # 打开后，m3u8 缺 #EXT-X-ENDLIST 的会交给录制器持续跟进分片，
+    # 而不是让 yt-dlp 录一段就收工
+    "live_record": True,
+    # 单次录制时长上限（分钟），0 = 不限（手动停止）
+    "live_minutes": 0,
+    # 录制多少个分片后落一次盘再接着录（内存/断流双保险，0 = 全录完再拼）
+    "live_flush_segments": 0,
+    # 录完尝试用 ffmpeg 转 mp4（没装 ffmpeg 就保留 .ts）
+    "live_remux": True,
+
+    # ---- B 站弹幕（见 jiliu/danmaku.py）----
+    # 视频下完后顺手抓弹幕：XML 留档，ASS 给播放器（同名同目录自动挂载）
+    "danmaku": False,
+    "danmaku_formats": ["xml", "ass"],
+    "danmaku_font": "Microsoft YaHei",
+    # 0.1 ~ 1.0，越小越透（太实会盖住画面）
+    "danmaku_alpha": 0.78,
+    # 单次最多写多少条，0 = 全要（一场直播回放能到十几万条）
+    "danmaku_max": 20000,
+    # mode 7/8 是脚本弹幕，转了也是乱码，默认丢
+    "danmaku_skip_special": True,
+
+    # ---- 解析插件（见 jiliu/plugins.py）----
+    # 插件放在 <配置目录>/plugins/*.py，用户可自己加站点解析
+    "plugins_enabled": True,
+    # 停用的插件名（= 文件名去掉 .py）
+    "plugins_disabled": [],
+
+    # ---- 外观（见 jiliu/theme.py、jiliu/i18n.py）----
+    # 配色预设：ink 墨 / paper 纸 / night 夜
+    "ui_theme": "ink",
+    # auto = 跟随系统深浅色
+    "ui_mode": "auto",
+    # 强调色：留空跟随预设，或 jade/rust/ink/plum，或 #rrggbb
+    "ui_accent": "",
+    # 界面语言：zh-CN / en-US
+    "ui_lang": "zh-CN",
 }
 
 _cache: Dict[str, Any] | None = None
@@ -289,13 +387,11 @@ def load(force: bool = False) -> Dict[str, Any]:
         return _cache
 
     cfg = dict(DEFAULTS)
-    if CONFIG_PATH.exists():
-        try:
-            data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                cfg.update({k: v for k, v in data.items() if k in DEFAULTS})
-        except Exception:
-            pass
+    data = _atomicio.read_json(CONFIG_PATH, default=None)
+    if isinstance(data, dict):
+        cfg.update({k: v for k, v in data.items() if k in DEFAULTS})
+    elif data is not None:
+        _atomicio.warn("config.json 顶层不是对象，已按默认配置处理")
 
     _migrate(cfg)
     _cache = cfg
@@ -312,6 +408,9 @@ _MIGRATIONS: Dict[str, tuple] = {
     "video_dir": ("videos", ""),
     # 代理默认从「读环境变量」改成「跟随系统代理」
     "proxy_mode": ("auto", "system"),
+    # 并发从「全局 3 个」改成「按队列配额」：老配置里的 3 会把
+    # 默认队列 3 + 视频队列 2 = 5 的天花板压回 3，队列等于白设
+    "max_concurrent": (3, 0),
 }
 
 
@@ -324,10 +423,8 @@ def _migrate(cfg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def save(cfg: Dict[str, Any]) -> None:
-    HOME.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(
-        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    # 原子写：断电/并发保存只会留下完整的一份，且保留上一版 .bak
+    _atomicio.write_json(CONFIG_PATH, cfg, indent=2)
     global _cache
     _cache = cfg
 

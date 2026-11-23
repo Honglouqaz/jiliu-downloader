@@ -33,10 +33,32 @@ BUILD = ROOT / "build"
 BUILDTOOLS = ROOT / "buildtools"
 VENDOR = ROOT / "vendor"
 INSTALLER_SRC = ROOT / "installer" / "setup_main.py"
+LAUNCHER_SRC = ROOT / "jiliu_wake.py"
+LAUNCHER_EXE = DIST / "jiliu-wake.exe"
 
 # 便携包里带这些东西
-PAYLOAD_FILES = ["README.md", "LICENSE"]
-PAYLOAD_DIRS = ["extension"]
+PAYLOAD_FILES = ["README.md", "LICENSE", "LICENSE-PRO.md"]
+
+
+def payload_files() -> list:
+    """打包要拷进便携目录的顶层文件。
+
+    RELEASE 说明按**当前版本号**取，不写死在这里：写死的结果是升级版本后
+    忘了改这一行，新包里躺着的还是上一版的发布说明，用户打开看到的是
+    旧内容，还以为是新包没生效。
+    """
+    out = list(PAYLOAD_FILES)
+    rn = f"RELEASE-{version()}.md"
+    p = ROOT / rn
+    if p.is_file():
+        out.append(rn)
+    else:
+        print(f"  注意：没有 {rn}，包里将不带发布说明")
+    return out
+# bin/ 里有随包的 aria2c.exe。带上它，默认引擎顺序第一位才真的生效 ——
+# 之前 bin/ 是空的，用户机器上没装 aria2，实际上一直在跑自研引擎。
+# licenses/ 是分发 GPL/LGPL 二进制的义务，不能省。
+PAYLOAD_DIRS = ["extension", "bin", "licenses"]
 DOCS = [("docs/使用说明.html", "使用说明.html"),
         ("docs/国内站点实测报告.html", "国内站点实测报告.html")]
 
@@ -164,6 +186,9 @@ def build_exe() -> bool:
         "--specpath", str(BUILD),
         # 面板静态页要跟着走
         "--add-data", f"{ROOT / 'web'}{os.pathsep}web",
+        # 随包的外部程序（aria2c）与它们的分发许可
+        "--add-data", f"{ROOT / 'bin'}{os.pathsep}bin",
+        "--add-data", f"{ROOT / 'licenses'}{os.pathsep}licenses",
         # yt-dlp 得整个包进去：它靠 importlib 动态加载 extractor，
         # 只静态分析会漏掉一大半站点支持
         "--collect-submodules", "yt_dlp",
@@ -179,6 +204,12 @@ def build_exe() -> bool:
         # 二维码：纯 Python 包（qrcode + pypng），在 vendor/ 里随 --paths 收
         "--collect-submodules", "qrcode",
         "--hidden-import", "png",
+        # pycryptodomex：HLS 的 AES-128 分片要靠它**原生**解密。
+        # 没有它时 yt-dlp 会把整个下载委托给 ffmpeg 的 hls 客户端 ——
+        # 能出片，但那是单连接、不能断点续传、也不吃 --concurrent-fragments。
+        # 免费影视站用 AES-128 的比例很高，所以这个包值得随包带上（约 1.6MB）。
+        "--hidden-import", "Cryptodome",
+        "--collect-submodules", "Cryptodome",
         "--paths", str(VENDOR),
         # 关键：**不打控制台**（windowed）。双击 exe 时 Windows 不再创建
         # 控制台窗口 —— 用户看到的第一个东西就是汲流自己的窗口。
@@ -233,6 +264,67 @@ def build_exe() -> bool:
     return True
 
 
+def build_launcher() -> bool:
+    """打 jiliu-wake.exe —— 注册表里协议处理器指向的那个薄壳。
+
+    为什么需要它（完整背景见 jiliu_wake.py 开头的说明）：
+        注册表登记的程序，用户每点一次网页链接就要启动一次。主程序是
+        25MB 的 onefile，每次都要解包 24MB，实测 `version` 这种立刻退出
+        的子命令也要 4.1 秒；同一份内容打 onedir 只要 1.15 秒，差值
+        纯粹是解包。唤起器只有 10MB、只 import 标准库，实测 2.2 秒。
+
+    体积是这个函数的核心指标，不是副产物：
+        解包时间跟着体积走，所以这里除了常规排除项，末尾还有一道
+        硬断言 —— 超过 16MB 就判构建失败。拦的是「哪天有人顺手加了
+        --collect-submodules jiliu，把整包又拖回来」，那种情况产物
+        照样"构建成功"，只有用户会觉得点完链接等六秒。
+    """
+    step("构建 jiliu-wake.exe（协议唤起器）")
+    if not LAUNCHER_SRC.is_file():
+        log(f"缺 {LAUNCHER_SRC.name}，跳过 —— 协议会退回指向主程序（能用但慢）")
+        return False
+
+    rm_quiet(LAUNCHER_EXE)
+    rm_tree(BUILD / "wake")
+
+    cmd = [
+        sys.executable, "-m", "PyInstaller",
+        "--noconfirm", "--onefile",
+        "--name", "jiliu-wake",
+        "--distpath", str(DIST),
+        "--workpath", str(BUILD / "wake"),
+        "--specpath", str(BUILD),
+        "--windowed",
+        # 只认这一个子模块。静态分析会顺着 jiliu/__init__.py 走到 urltake，
+        # 再走到 config —— 三个模块加起来不到 40KB。
+        "--hidden-import", "jiliu.urltake",
+        "--paths", str(VENDOR),
+        # 下面这一排是实测出来的，不是从主程序抄的：只要 --paths 挂了
+        # 项目根或 vendor，PyInstaller 就能顺着各种可选 import 把小半个
+        # 运行时拖进来。不加这些时产物 21.8MB（含 1039 个 yt_dlp 模块），
+        # 加了之后 10.3MB。排除项少一个，启动就慢一截。
+    ]
+    for mod in ("yt_dlp", "webview", "pythonnet", "clr_loader", "clr",
+                "Cryptodome", "qrcode", "bottle", "setuptools",
+                "numpy", "scipy", "pandas", "matplotlib", "PIL", "lxml",
+                "cv2", "IPython", "pytest", "tkinter"):
+        cmd += ["--exclude-module", mod]
+    cmd.append(str(LAUNCHER_SRC))
+
+    rc = run(cmd, env=pyinstaller_env())
+    if rc != 0 or not LAUNCHER_EXE.is_file():
+        log(f"PyInstaller 失败（rc={rc}）—— 协议会退回指向主程序")
+        return False
+
+    mb = LAUNCHER_EXE.stat().st_size / 1048576
+    log(f"jiliu-wake.exe  {mb:.1f} MB")
+    if mb > 16:
+        log("体积超过 16MB —— 唤起器已经失去意义（解包时间跟着体积走）。"
+            "检查是不是哪里加了 --collect-*。")
+        return False
+    return True
+
+
 def exe_has_native_window(exe: pathlib.Path) -> bool:
     """检查 exe 归档里有没有 pywebview 的 WebView2 桥接 DLL。
 
@@ -284,7 +376,7 @@ def cleanup_intermediates() -> None:
     但它们只是中间产物 —— 删不掉顶多是留点垃圾，
     不该让一次成功的构建看起来像失败了。
     """
-    for d in (DIST / "setup_payload",):
+    for d in (DIST / "setup_payload", BUILD / "wake"):
         if not d.exists():
             continue
         try:
@@ -310,11 +402,15 @@ def copy_tree(src: pathlib.Path, dst: pathlib.Path) -> None:
         shutil.copy2(p, target)
 
 
-def make_portable(exe_ok: bool) -> pathlib.Path:
-    """组装便携目录并打 zip。"""
-    step("组装便携版")
+def make_portable(exe_ok: bool, form: str = "oss") -> pathlib.Path:
+    """组装便携目录并打 zip。
+
+    form 决定这一包是哪个发行形态（见 jiliu/edition.py 的 FORMS）：
+    「归档版」不解析视频站，是另一条产品线，不是同一包里的一个开关。
+    """
+    step(f"组装便携版（{form}）")
     ver = version()
-    name = f"jiliu-portable-{ver}"
+    name = f"jiliu-portable-{ver}" + ("" if form == "oss" else f"-{form}")
     out = DIST / name
     if out.exists():
         rm_tree(out)
@@ -322,8 +418,25 @@ def make_portable(exe_ok: bool) -> pathlib.Path:
 
     if exe_ok and (DIST / "jiliu.exe").is_file():
         shutil.copy2(DIST / "jiliu.exe", out / "jiliu.exe")
+    else:
+        # 没有 exe 的「便携版」是个空壳：用户解压出来只有一堆文本和 extension，
+        # 双击没反应。宁可这一轮不出包，也不要把这种包发出去 ——
+        # 上一次就是因为 exe 被正在运行的进程占用、PyInstaller 覆盖失败，
+        # 静默打出了一个 2.4MB 的残包。
+        raise SystemExit(
+            "错误：dist/jiliu.exe 不存在或复制失败，便携包会是个空壳，已中止。\n"
+            "  常见原因：上一次构建的 jiliu.exe 还在运行（文件被占用）。\n"
+            "  先关掉正在跑的汲流，再重跑。")
 
-    for f in PAYLOAD_FILES:
+    # 协议唤起器：和主程序放一起，注册表指向它。
+    # 缺了不算致命（jiliu/urltake.py 的 handler_path() 会退回主程序，
+    # 功能一样只是点链接要等四秒），所以这里只警告不中止。
+    if LAUNCHER_EXE.is_file():
+        shutil.copy2(LAUNCHER_EXE, out / LAUNCHER_EXE.name)
+    else:
+        log("警告：没有 jiliu-wake.exe，协议唤起会退回主程序（点链接要等约 4 秒）")
+
+    for f in payload_files():
         p = ROOT / f
         if p.is_file():
             shutil.copy2(p, out / f)
@@ -343,15 +456,21 @@ def make_portable(exe_ok: bool) -> pathlib.Path:
     # 安装器靠这个报版本号 —— 负载里只有单文件 exe，没源码可 import
     (out / "version.txt").write_text(ver + "\n", encoding="utf-8")
 
+    # 发行形态跟着安装包走：归档版装完就是归档版，不再给用户一个
+    # 「切回开源版」的开关 —— 两条产品线的能力与承诺不一样。
+    if form and form != "oss":
+        (out / "form.txt").write_text(form + "\n", encoding="utf-8")
+
     (out / "bin").mkdir(exist_ok=True)
     (out / "bin" / "放这里.txt").write_text(
-        "把外部的命令行工具放这个目录，汲流会自动认出来：\n\n"
-        "  yt-dlp.exe   视频解析（不装也行 —— exe 里已内置一份，\n"
-        "               放一个新的可以覆盖内置版本）\n"
-        "  ffmpeg.exe   音视频合并 / 抽音轨（下带分离音轨的视频时需要）\n"
-        "  ffprobe.exe  媒体信息探测\n"
-        "  aria2c.exe   备用下载引擎（也可当 Motrix 的 RPC 后端用）\n\n"
-        "放好后在面板里点「工具」或跑 jiliu.exe tools 就能看到识别结果。\n",
+        "这个目录里已经有 aria2c.exe（随包附带，默认引擎顺序第一位就是它）。\n"
+        "想换版本或补别的工具，直接丢进来就会被识别，不用改配置：\n\n"
+        "  aria2c.exe   P2P / 磁力 / 多源下载（已随包，可替换成新版）\n"
+        "  ffmpeg.exe   音视频合流 / 转码（需要时可在「设置 › 下载 › 引擎」\n"
+        "               点「下载安装」，程序会自己下好放进这里）\n"
+        "  ffprobe.exe  媒体信息探测（跟 ffmpeg 一起）\n"
+        "  yt-dlp.exe   视频解析（exe 里已内置一份，放新的可覆盖）\n\n"
+        "放好后在面板里点「环境体检」或跑 jiliu.exe tools 就能看到识别结果。\n",
         encoding="utf-8")
 
     # 主入口是 jiliu.exe 本身（双击就开窗口，没有黑框）。
@@ -369,10 +488,18 @@ def make_portable(exe_ok: bool) -> pathlib.Path:
         ")\r\n", encoding="utf-8")
 
     zp = DIST / f"{name}.zip"
+    # 只打「我们自己放进来的东西」：downloads/ 是运行时目录，
+    # 构建后只要有人在里面下过一次文件，重打 zip 就会把用户的
+    # 下载内容（甚至别人的视频）一起发给所有人。
+    skip_top = {"downloads", "data", "logs", "cache"}
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for p in sorted(out.rglob("*")):
-            if p.is_file():
-                z.write(p, pathlib.Path(name) / p.relative_to(out))
+            if not p.is_file():
+                continue
+            rel = p.relative_to(out)
+            if rel.parts and rel.parts[0] in skip_top:
+                continue
+            z.write(p, pathlib.Path(name) / rel)
     log(f"便携目录 {out}")
     log(f"便携压缩包 {zp.name}  {zp.stat().st_size / 1048576:.1f} MB")
     return zp
@@ -395,6 +522,9 @@ def build_setup(exe_ok: bool) -> bool:
         rm_tree(payload)
     payload.mkdir(parents=True)
     shutil.copy2(DIST / "jiliu.exe", payload / "jiliu.exe")
+    # 唤起器跟着装 —— 安装版用户点网页链接同样要快。
+    if LAUNCHER_EXE.is_file():
+        shutil.copy2(LAUNCHER_EXE, payload / LAUNCHER_EXE.name)
     (payload / "version.txt").write_text(version() + "\n", encoding="utf-8")
     for d in PAYLOAD_DIRS:
         copy_tree(ROOT / d, payload / d)
@@ -402,7 +532,7 @@ def build_setup(exe_ok: bool) -> bool:
         p = ROOT / src
         if p.is_file():
             shutil.copy2(p, payload / dst)
-    for f in PAYLOAD_FILES:
+    for f in payload_files():
         p = ROOT / f
         if p.is_file():
             shutil.copy2(p, payload / f)
@@ -465,6 +595,8 @@ def main() -> int:
     ap.add_argument("--skip-exe", action="store_true", help="复用已有 dist/jiliu.exe")
     ap.add_argument("--skip-setup", action="store_true", help="不打安装版")
     ap.add_argument("--tests", action="store_true", help="打包前先跑全部测试")
+    ap.add_argument("--form", default="oss", choices=["oss", "archive"],
+                    help="发行形态：oss=开源版（含视频站解析），archive=归档版")
     args = ap.parse_args()
 
     print(f"汲流打包 v{version()}")
@@ -486,12 +618,19 @@ def main() -> int:
     if not exe_ok:
         print("\n没有主程序 exe，只能打出不含可执行文件的骨架包。")
 
-    zp = make_portable(exe_ok)
+    # 唤起器不吃 --skip-exe（它是独立产物，几十秒的事）：
+    # 复用旧主程序时仍然该重打，否则改了 urltake 的解析逻辑，
+    # 唤起器还是旧的那份，表现是"命令行能唤起、点网页链接不行"。
+    build_launcher()
+
+    zp = make_portable(exe_ok, form=args.form)
     setup_ok = False if args.skip_setup else build_setup(exe_ok)
 
     items = {"便携版": zp}
     if exe_ok:
         items["主程序"] = DIST / "jiliu.exe"
+    if LAUNCHER_EXE.is_file():
+        items["协议唤起器"] = LAUNCHER_EXE
     if setup_ok:
         items["安装版"] = DIST / "jiliu-setup.exe"
 

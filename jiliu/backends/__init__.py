@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pathlib
 import threading
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from . import aria2 as _aria2
 from . import external as _external
@@ -146,6 +146,7 @@ def make_downloader(
     chunk_size: Optional[int] = None,
     verify_hash: bool = False,
     expected_sha256: str = "",
+    mirrors: Optional[List[str]] = None,
 ):
     """按配置返回合适的下载器实例。两者的 run/pause/resume/cancel/snapshot 接口一致。
 
@@ -159,13 +160,17 @@ def make_downloader(
     if effective == "aria2":
         try:
             client = get_client(cfg)
-            if (chunk_size or verify_hash or expected_sha256) and log_cb:
-                log_cb("aria2 后端下忽略分片/哈希策略（由 aria2 自行决定），"
+            if (chunk_size or verify_hash) and log_cb:
+                log_cb("aria2 后端下忽略分片策略（由 aria2 自行决定），"
                        "需要按类型定制请设 backend=native")
             return _aria2.Aria2Downloader(
                 url, dest, cfg=cfg, client=client, threads=threads,
                 headers=headers, speed_limit=speed_limit,
                 progress_cb=progress_cb, log_cb=log_cb,
+                # 镜像与预期哈希 aria2 原生支持（多 URI + --checksum），
+                # 别让它白白丢掉这两个 1.8.0 才加的能力
+                mirrors=mirrors,
+                expected_sha256=expected_sha256,
             )
         except Exception as exc:  # noqa: BLE001
             if log_cb:
@@ -190,7 +195,7 @@ def make_downloader(
         url, dest, cfg=cfg, threads=threads, headers=headers,
         speed_limit=speed_limit, progress_cb=progress_cb, log_cb=log_cb,
         chunk_size=chunk_size, verify_hash=verify_hash,
-        expected_sha256=expected_sha256,
+        expected_sha256=expected_sha256, mirrors=mirrors,
     )
 
 

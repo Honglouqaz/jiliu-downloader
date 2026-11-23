@@ -336,6 +336,20 @@ def _report_crash(exc: BaseException) -> None:
         pass
 
 
+OPEN_URL_FLAG = "--open-url"
+
+
+def _take_open_url(argv):
+    """从参数里摘出协议唤起的目标，返回 (目标, 其余参数)。
+
+    实现在 jiliu.urltake.split_argv —— 轻量唤起器（jiliu_wake.py）解析
+    的是同一个参数，两边共用一份，免得以后改写法时漏掉一边。
+    这里只是保留旧名字，供测试和探针调用。
+    """
+    from jiliu import urltake
+    return urltake.split_argv(argv)
+
+
 def main():
     argv = sys.argv[1:]
 
@@ -359,6 +373,36 @@ def main():
     # windowed 打包下双击启动没有控制台，流全是 None —— 先兜底成哑设备，
     # 保证任何 print/sys.stdout.write 都不会 AttributeError。
     _windowed_stdio_guard()
+
+    # ---- 协议唤起：jiliu.exe --open-url "jiliu://download?url=..." ----
+    #
+    # 这一段必须在上面 desktop_mode 判定之后、补控制台之前。
+    # 不拦的话 argv 非空且不是 `gui`，会被当成命令行用法 → 补一个控制台，
+    # 用户点网页链接时会突然冒出一个黑框，正好挡在浏览器前面。
+    open_spec, argv = _take_open_url(argv)
+    if open_spec:
+        from jiliu import urltake
+        info = urltake.parse(open_spec)
+        if info.get("wake") and (urltake.read_runtime()
+                                 or urltake.scan_instance()):
+            # jiliu://wake 只是"叫醒"。已经在跑就什么都不用做。
+            # 除了 runtime.json，还得扫一眼端口：记录可能被清掉、或者
+            # pid 是上一个进程的，那时 read_runtime 返回 None，但实例
+            # 明明在跑，照样会在这里多开一个窗口。
+            return 0
+        if info.get("ok"):
+            hit = urltake.handoff(info)
+            if hit.get("ok"):
+                # 已有实例接住了。本进程立刻退出，不能再开第二个窗口 ——
+                # 两个实例抢同一个 tasks.json，任务会互相覆盖。
+                return 0
+        if not info.get("wake"):
+            # 待办挂进环境变量，服务起来后自己投递。
+            # 链接不合法时也挂：服务端会把失败原因记进"最近唤起"，
+            # 界面上能看到，比点完毫无反应强。
+            os.environ[urltake.PENDING_ENV] = open_spec
+        argv = ["gui"]
+        desktop_mode = True
 
     # 命令行用法（带参数、又不是宿主子命令、也不是开窗口）：没有真终端
     # 就补一个，否则用户在快捷方式里跑 `jiliu.exe tools` 看不到任何输出。

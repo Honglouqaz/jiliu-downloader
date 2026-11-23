@@ -320,6 +320,15 @@ GENERIC_EXTS = {
     "aspx", "jsp", "do", "cgi", "action",
 }
 
+# 这些不是「用户起的名」，而是服务端脚本 / 浏览器占位 —— 可以放心改判。
+# .bin/.dat/.raw 不在此列：它们常是固件、镜像、数据集，用户就是要这个后缀，
+# 按「内容像文本」改成 .txt 只会让人拿到一个打不开的文件。
+PLACEHOLDER_EXTS = {
+    "download", "tmp", "part", "partial", "crdownload", "unknown", "blob",
+    "octet-stream", "file", "get", "php", "asp", "aspx", "jsp", "do", "cgi",
+    "action",
+}
+
 # ==========================================================================
 # ② MIME 表
 # ==========================================================================
@@ -959,8 +968,14 @@ def classify(*, url: str = "", filename: str = "", mime: str = "",
         if scat:
             magic_desc = sdesc
             vote(scat, 1.0, f"文件头魔数 → {sdesc}")
-            if sext and (not plan.ext or plan.ext in GENERIC_EXTS):
-                # URL 写着 .bin/.dat 或者干脆没后缀时，以文件头为准
+            # 「纯文本」是软判断（可打印字符占比高就算），不能拿它覆盖
+            # 用户明确的后缀；只有真魔数（PDF/ZIP/MP4…）才可以改判。
+            # 只有「裸文本」算软判断；JSON 的 { / [ 开头、HTML 的 doctype
+            # 都是明确结构特征，可以改判（.bin 里装 JSON 就该叫 .json）
+            soft = sdesc == "纯文本"
+            if sext and (not plan.ext
+                         or plan.ext in PLACEHOLDER_EXTS
+                         or (plan.ext in GENERIC_EXTS and not soft)):
                 if plan.ext and plan.ext != sext:
                     reasons.append(f"URL 后缀 .{plan.ext} 是占位符，按文件头改判为 .{sext}")
                 plan.ext = sext
@@ -1160,7 +1175,12 @@ def suggest_filename(plan: ResourcePlan, current: str) -> str:
         return f"{plan.category}{'.' + plan.ext if plan.ext else ''}"
     stem, _dot, ext = base.rpartition(".")
     have = ext.lower() if _dot else ""
-    if have and have not in GENERIC_EXTS and have != "download":
+    # 只在「没有后缀」或「明显是占位后缀」时才替用户补名字。
+    # .bin/.dat 这类是用户自己给的，动了就是帮倒忙 —— 除非文件头
+    # 硬证据推翻了它（.bin 里装的是 ZIP，就该叫 .zip）。
+    if have and have not in PLACEHOLDER_EXTS:
+        if have in ("bin", "dat", "raw", "data") and plan.ext and plan.ext != have:
+            return f"{stem}.{plan.ext}"
         return base          # 已有明确后缀，尊重它
     stem = stem if _dot else base
     return f"{stem}.{plan.ext}"

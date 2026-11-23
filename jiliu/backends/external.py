@@ -276,7 +276,7 @@ class ExternalDownloader:
             with self._lock:
                 self._samples.append((time.monotonic(), cur))
                 if len(self._samples) > _SAMPLES:
-                    del self._samples[:-len(self._samples) + _SAMPLES - 1]
+                    del self._samples[:-_SAMPLES]
             self._emit()
             self._stop.wait(_POLL)
 
@@ -342,12 +342,13 @@ class ExternalDownloader:
                 pass
         self._resume_evt.set()          # 唤醒可能正等着的 run
         self._stop.set()
-        for f in (self.part, self.dest):
-            try:
-                if f.exists() and not self._done:
-                    f.unlink()
-            except Exception:  # noqa: BLE001
-                pass
+        # 只删 .part。dest 可能是用户原有的同名文件（overwrite 策略下
+        # 重新下载途中取消），删掉等于毁用户数据。
+        try:
+            if self.part.exists() and not self._done:
+                self.part.unlink()
+        except Exception:  # noqa: BLE001
+            pass
         return True
 
     # ---------------- 状态 ----------------

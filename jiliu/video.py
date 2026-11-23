@@ -40,6 +40,9 @@ from . import cookies, naming, proxy, tools
 PROG_PREFIX = "JLPROG:"
 _NO_WINDOW = 0x08000000
 
+# 流直链判定（只要后缀，不看站点）：分片并发只对这些开
+_STREAM_RE = re.compile(r"\.(m3u8|m3u|mpd)$")
+
 
 class VideoError(Exception):
     pass
@@ -111,12 +114,28 @@ def _cmd_prefix(cfg: Dict[str, Any]) -> List[str]:
     return list(cmd)
 
 
-def _base_args(cfg: Dict[str, Any], url: str = "") -> List[str]:
+def _base_args(cfg: Dict[str, Any], url: str = "",
+               headers: Optional[Dict[str, str]] = None) -> List[str]:
     """只要选项部分（不含可执行前缀）—— 交给 tools.ytdlp_run 统一执行。
 
     url 要传进来：cookie 和代理都得按站点分流，不能一视同仁。
+
+    headers 是**任务级**请求头，来自三处：网页解析（pagesniff）、
+    浏览器扩展（嗅探到的媒体连同 cookie/referer 一起发来）、插件。
+    CDN 防盗链只查三样：Referer / UA / Cookie，少一样就是 403 ——
+    而用户看到的只是「地址没错却下不动」，所以必须原样透传给 yt-dlp，
+    连分片请求和 m3u8 的 key 请求也要带上（--add-header 是全局生效的）。
     """
     args = ["--no-warnings", "--no-color", "--ignore-config"]
+    # 保留调用方给的原始大小写（HTTP 头不区分大小写，但透传原样更省事，
+    # 有些 WAF 会拿头名做白名单匹配）；取值时一律按小写找。
+    hdrs = {str(k): str(v) for k, v in (headers or {}).items() if v}
+
+    def take(name: str) -> str:
+        for k in list(hdrs):
+            if k.lower() == name:
+                return hdrs.pop(k)
+        return ""
 
     # cookie：按域名自动挑该站点的文件（见 cookies.ytdlp_args）
     args += cookies.ytdlp_args(cfg, url)
@@ -130,11 +149,23 @@ def _base_args(cfg: Dict[str, Any], url: str = "") -> List[str]:
 
     # 注意这里用的是 video_user_agent，不是 user_agent。
     # 后者带 "Jiliu/1.0" 后缀，拿去请求 YouTube 等于自报家门是爬虫。
-    ua = str(cfg.get("video_user_agent") or "").strip()
+    # 任务级 UA 优先：扩展发来的就是真实浏览器的 UA，冒充不了。
+    ua = take("user-agent") or str(cfg.get("video_user_agent") or "").strip()
     if ua:
         args += ["--user-agent", ua]
-    if cfg.get("referer"):
-        args += ["--referer", str(cfg["referer"])]
+
+    ref = take("referer") or str(cfg.get("referer") or "").strip()
+    if ref:
+        args += ["--referer", ref]
+
+    # Cookie 用 --add-header 而不是写临时 cookie 文件：
+    # 扩展给的是「当前会话的 cookie 串」，落盘就多了个要清理的敏感文件。
+    for k in ("cookie", "origin"):
+        v = take(k)
+        if v:
+            args += ["--add-header", f"{k.title()}: {v}"]
+    for k, v in hdrs.items():
+        args += ["--add-header", f"{k}: {v}"]
 
     ffdir = tools.which_ffmpeg_dir()
     if ffdir:
@@ -222,7 +253,7 @@ def humanize_error(err: str, cfg: Optional[Dict[str, Any]] = None,
         return {
             "kind": "cookie",
             "title": "服务器拒绝（403）——多半是 cookie 过期了",
-            "detail": "凭证失效或该站点了新的风控。",
+            "detail": "凭证失效，或该站点启用了新的风控（UA / Referer 也可能被查）。",
             "fixes": ["重新导出一次 cookie（登录态会过期，YouTube 大约几个月）"],
             "raw": tail,
         }
@@ -359,7 +390,8 @@ def humanize_error(err: str, cfg: Optional[Dict[str, Any]] = None,
 # 解析
 # --------------------------------------------------------------------------
 
-def _run_json(args: List[str], cfg: Dict[str, Any], timeout: int) -> Dict[str, Any]:
+def _run_json(args: List[str], cfg: Dict[str, Any], timeout: int,
+              url: str = "") -> Dict[str, Any]:
     try:
         out = tools.ytdlp_run(args, cfg.get("ytdlp_path", ""), timeout=timeout)
     except FileNotFoundError as exc:
@@ -369,7 +401,10 @@ def _run_json(args: List[str], cfg: Dict[str, Any], timeout: int) -> Dict[str, A
 
     if out.returncode != 0:
         err = (out.stderr or b"").decode("utf-8", "replace").strip()
-        info = humanize_error(err, cfg)
+        # 403 的修复建议分支要求知道是哪个站点（YouTube 看 cookie，
+        # B 站看风控），解析阶段也必须把 url 传进来 —— 以前没传，
+        # 403 永远落到兜底文案，用户拿不到"重新导出 cookie"这一步。
+        info = humanize_error(err, cfg, url)
         raise VideoError(f"{info['title']}\n  {info['detail']}")
     try:
         return json.loads((out.stdout or b"{}").decode("utf-8", "replace"))
@@ -378,13 +413,14 @@ def _run_json(args: List[str], cfg: Dict[str, Any], timeout: int) -> Dict[str, A
 
 
 def probe(url: str, cfg: Dict[str, Any], timeout: int = 60,
-          *, playlist: bool = False, limit: int = 0) -> Dict[str, Any]:
+          *, playlist: bool = False, limit: int = 0,
+          headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """拿到视频元信息与可选格式列表。
 
     playlist=False（默认）时只取当前这一集 —— 哪怕 URL 是 B站多P，
     也只拿 ?p= 指的那一集，不会一下子展开成几十集。
     """
-    args = _base_args(cfg, url) + ["-J"]
+    args = _base_args(cfg, url, headers) + ["-J"]
     if playlist:
         args += ["--yes-playlist"]
         if limit > 0:
@@ -392,7 +428,7 @@ def probe(url: str, cfg: Dict[str, Any], timeout: int = 60,
     else:
         args += ["--no-playlist"]
     args.append(url)
-    return normalize_info(_run_json(args, cfg, timeout))
+    return normalize_info(_run_json(args, cfg, timeout, url))
 
 
 _P_RE = re.compile(r"[?&]p=(\d+)")
@@ -538,7 +574,7 @@ def probe_playlist(url: str, cfg: Dict[str, Any], timeout: int = 180,
     if lim > 0:
         args += ["--playlist-end", str(lim)]
     args.append(url)
-    info = _run_json(args, cfg, timeout)
+    info = _run_json(args, cfg, timeout, url)
     norm = normalize_info(info)
     norm["fast"] = bool(fast)
     if not norm.get("is_playlist"):
@@ -708,6 +744,23 @@ def _out_template(outdir: pathlib.Path, cfg: Dict[str, Any],
     return str(outdir / rel)
 
 
+def _fragment_args(url: str, cfg: Dict[str, Any]) -> List[str]:
+    """流直链的分片并发参数。非流直链返回空。
+
+    单独拎出来是为了能单测 —— 这段逻辑的参数拼法一改就影响所有 HLS 下载，
+    但它在 download() 里，跑一次真下载才能验证太贵。
+    """
+    if not _STREAM_RE.search((url or "").split("?")[0].split("#")[0].lower()):
+        return []
+    try:
+        n = int(cfg.get("stream_concurrency") or 8)
+    except (TypeError, ValueError):
+        n = 8
+    if n <= 1:
+        return []
+    return ["--concurrent-fragments", str(min(n, 16))]
+
+
 def download(
     url: str,
     outdir: pathlib.Path,
@@ -723,18 +776,20 @@ def download(
     group_title: str = "",
     audio_only: bool = False,
     subs_only: bool = False,
+    headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """调 yt-dlp 下载。含音视频合并、进度解析、可取消。
 
     items: 形如 "1-3,7"，只下合集里指定的几集（yt-dlp 的 --playlist-items）。
     subs_only: 纯字幕模式 —— 只下字幕（转 SRT），视频一个字节都不碰。
+    headers: 任务级请求头（Referer/UA/Cookie），防盗链 CDN 全靠它。
     """
     outdir = pathlib.Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
 
     do_audio = bool(audio_only or cfg.get("audio_only"))
     do_subs_only = bool(subs_only)
-    args = _cmd_prefix(cfg) + _base_args(cfg, url) + [
+    args = _cmd_prefix(cfg) + _base_args(cfg, url, headers) + [
         "-o", _out_template(outdir, cfg, playlist),
         "--newline",
         "--no-color",
@@ -787,6 +842,16 @@ def download(
 
     if cfg.get("speed_limit"):
         args += ["--limit-rate", str(int(cfg["speed_limit"]))]
+
+    # HLS/DASH 直链的分片并发。
+    #
+    # 一集 45 分钟的片子是 400~900 个 ts/m4s 分片，串行下只能跑满一条连接，
+    # 而单连接在多数 CDN 上被限到 2~4MB/s。IDM 的「多线程」在家里就是把
+    # 分片并发拉起来。这里只对**明确的流直链**开（页面解析出来的视频页
+    # 不开：普通站点并发高了会被风控，收益也不在分片上）。
+    if not do_subs_only:
+        args += _fragment_args(url, cfg)
+
     if extra_args:
         args += list(extra_args)
     args.append(url)

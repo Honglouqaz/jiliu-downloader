@@ -273,8 +273,8 @@ NETDISK = {
     "123pan.com": ("123 云盘", "分享页需要登录后转存，汲流不逆向它的私有接口。"
                                "拿到直链后汲流可以多线程下载。"),
     "lanzou": ("蓝奏云", "蓝奏云公开分享页汲流可以直接解析（免登录，"
-                          "自动过反爬换直链）。输入分享链接即可，"
-                          "暂不支持文件夹分享和带提取码的分享。"),
+                          "自动过反爬换直链），支持提取码和文件夹分享。"
+                          "输入分享链接即可。"),
     "drive.google.com": ("Google Drive", "需要直链或用 gdown 类工具取直链。"),
     "mega.nz": ("MEGA", "MEGA 有端到端加密，需要通过它自己的客户端解密。"),
 }
@@ -286,7 +286,13 @@ def detect_netdisk(url: str) -> Optional[Protocol]:
         url if "://" in (url or "") else "http://" + (url or "")).hostname or ""
     host = host.lower()
     for key, (name, tip) in NETDISK.items():
-        if key in host:
+        # 不能用 `key in host`：那样 "115.com" 会命中
+        # "evil-115.com.attacker.io"，把钓鱼链接认成网盘。
+        if key == "lanzou":
+            hit = host.startswith("lanzou") or ".lanzou" in host
+        else:
+            hit = host == key or host.endswith("." + key)
+        if hit:
             return Protocol(
                 kind="netdisk", label=f"{name}链接", url=url,
                 engine="native", p2p=False,

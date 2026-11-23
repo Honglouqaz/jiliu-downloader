@@ -194,6 +194,69 @@ def reg_write(target: pathlib.Path, uninstall_cmd: str, version: str = "",
         return False
 
 
+# ===================== 右键菜单 =====================
+# 安装版默认注册右键菜单：装完就能在资源管理器里「用汲流下载」，
+# 这是下载器的常识性期待。写 HKCU，不需要管理员；卸载时一并清掉。
+_SHELL_SCOPES = [
+    (r"Software\Classes\*\shell\Jiliu", '"%1"'),
+    (r"Software\Classes\Directory\shell\Jiliu", '"%1"'),
+    (r"Software\Classes\Directory\Background\shell\Jiliu", "--clipboard"),
+]
+_SHELL_LABEL = "用汲流下载"
+
+
+def shell_menu_write(exe: pathlib.Path, dry: bool) -> int:
+    """写三处右键菜单，返回写成功的处数。"""
+    if os.name != "nt":
+        return 0
+    if dry:
+        for scope, arg in _SHELL_SCOPES:
+            print(f"  [dry] HKCU\\{scope} → \"{exe}\" add {arg}")
+        return len(_SHELL_SCOPES)
+    try:
+        import winreg
+    except ImportError:
+        return 0
+    wrote = 0
+    for scope, arg in _SHELL_SCOPES:
+        try:
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, scope, 0,
+                                    winreg.KEY_WRITE) as k:
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, _SHELL_LABEL)
+                winreg.SetValueEx(k, "Icon", 0, winreg.REG_SZ, str(exe))
+                winreg.SetValueEx(k, "MultiSelectModel", 0, winreg.REG_SZ, "Player")
+                winreg.SetValueEx(k, "JiliuPath", 0, winreg.REG_SZ, f'"{exe}"')
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, scope + r"\command",
+                                    0, winreg.KEY_WRITE) as k:
+                winreg.SetValueEx(k, "", 0, winreg.REG_SZ, f'"{exe}" add {arg}')
+            wrote += 1
+        except OSError as exc:
+            log(f"右键菜单写入失败（{scope}）：{exc}")
+    return wrote
+
+
+def shell_menu_delete(dry: bool) -> int:
+    if os.name != "nt":
+        return 0
+    if dry:
+        print("  [dry] 删除 HKCU 下的 Jiliu 右键菜单")
+        return len(_SHELL_SCOPES)
+    try:
+        import winreg
+    except ImportError:
+        return 0
+    removed = 0
+    for scope, _ in _SHELL_SCOPES:
+        for path in (scope + r"\command", scope):
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, path)
+                if not path.endswith("command"):
+                    removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 def reg_delete(dry: bool = False) -> bool:
     key = rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{APP_ID}"
     if dry:
@@ -310,7 +373,8 @@ def write_uninstaller(target: pathlib.Path, dry: bool) -> pathlib.Path:
 
 
 def do_install(target: pathlib.Path, dry: bool, shortcuts: bool,
-               autostart: bool, quiet: bool, desktop: bool = True) -> int:
+               autostart: bool, quiet: bool, desktop: bool = True,
+               shell_menu: bool = True) -> int:
     src = payload_dir()
     print(f"\n  {APP_NAME} 安装")
     print(f"  负载目录 {src}")
@@ -351,6 +415,11 @@ def do_install(target: pathlib.Path, dry: bool, shortcuts: bool,
         make_shortcut(startup_dir() / f"{APP_NAME}.lnk", target_exe, target,
                       LAUNCH_ARGS, f"{APP_NAME}（开机自启）", dry)
 
+    if shell_menu:
+        n = shell_menu_write(target_exe, dry)
+        if n:
+            log(f"右键菜单已注册（{n}/3 处，HKCU，免管理员）")
+
     unbat = write_uninstaller(target, dry)
     ver = _version(src)
     reg_write(target, f'"{unbat}"', ver, dry)
@@ -378,6 +447,7 @@ def stop_running() -> None:
 
 
 def do_uninstall(target: pathlib.Path, dry: bool) -> int:
+    shell_menu_delete(dry)
     print(f"\n  {APP_NAME} 卸载")
     print(f"  安装目录 {target}\n")
 
@@ -435,6 +505,8 @@ def main() -> int:
     ap.add_argument("--no-shortcuts", action="store_true", help="不建快捷方式")
     ap.add_argument("--no-desktop", action="store_true", help="不建桌面快捷方式")
     ap.add_argument("--autostart", action="store_true", help="加开机自启")
+    ap.add_argument("--no-shell-menu", action="store_true",
+                    help="不注册资源管理器右键菜单（默认注册）")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
@@ -447,7 +519,8 @@ def main() -> int:
                       shortcuts=not args.no_shortcuts,
                       autostart=args.autostart,
                       quiet=args.quiet,
-                      desktop=not args.no_desktop)
+                      desktop=not args.no_desktop,
+                      shell_menu=not args.no_shell_menu)
 
 
 if __name__ == "__main__":

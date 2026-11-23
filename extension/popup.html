@@ -14,6 +14,8 @@
   }
   .top{display:flex; align-items:center; gap:8px; margin-bottom:10px}
   .top b{font-size:14px; letter-spacing:.4px}
+  .top .ver{font-size:10px; color:var(--dim2); border:1px solid var(--line);
+            border-radius:4px; padding:0 4px; flex:none}
   .dot{width:7px; height:7px; border-radius:50%; background:var(--dim2); flex:none}
   .dot.on{background:var(--ok)}
   .dot.off{background:var(--err)}
@@ -22,6 +24,8 @@
   .box{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px; margin-bottom:10px}
   .lbl{font-size:11px; color:var(--dim2); margin-bottom:6px; display:flex; justify-content:space-between; align-items:center}
   .lbl button{font-size:11px; padding:2px 7px}
+  /* 标签右侧现在有两个按钮（解析 / 重扫），小屏要能换行不挤爆 */
+  .lbl>span:last-child{display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end}
 
   input,select,button{
     font:inherit; font-size:12.5px; color:var(--text); background:#141922;
@@ -58,6 +62,7 @@
   details{margin-top:8px}
   .cfgrow{display:flex; gap:6px; align-items:center; margin-top:7px}
   .cfgrow label{font-size:11px; color:var(--dim2); width:88px; flex:none}
+  .hint{font-size:10.5px; color:var(--dim2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 </style>
 </head>
 <body>
@@ -65,13 +70,19 @@
   <div class="top">
     <span class="dot" id="dot"></span>
     <b>汲流</b>
+    <!-- 扩展自己的版本。改完代码要在 chrome://extensions 重新加载才生效，
+         这里显示出来，用户一看就知道自己跑的是不是新版 -->
+    <span class="ver" id="extVer" title="扩展版本：重新加载扩展后才会变"></span>
     <span class="st" id="status">检查中…</span>
+    <button id="btnWake" style="display:none; margin-left:auto; font-size:11px; padding:3px 9px"
+            title="用 jiliu:// 协议把汲流拉起来（应用不用先打开）">启动</button>
   </div>
 
   <div class="box">
     <div class="lbl">
       <span>本页发现的媒体</span>
-      <span><button id="btnRescan">重扫</button></span>
+      <span><button id="btnParse" title="从当前页面的 HTML 里找出真正的视频流地址（苹果CMS / iframe / 内联播放器都认）">解析播放页</button>
+      <button id="btnRescan">重扫</button></span>
     </div>
     <div class="list" id="list"><div class="empty">正在扫描…</div></div>
   </div>
@@ -107,6 +118,21 @@
       智能模式下，安装包 / 压缩包 / 镜像 / 音视频 / 大文件交给汲流多线程下；
       小图片、字体、网页更新包放行给浏览器。判断前会先挂起下载，不会白下流量。
     </div>
+  </div>
+
+  <div class="box">
+    <div class="lbl"><span>页面组件</span><span id="featTag" style="color:var(--dim2)"></span></div>
+    <div class="cfgrow" style="margin-top:0">
+      <label>视频悬浮按钮</label>
+      <input type="checkbox" id="hotspotButton" style="width:auto">
+      <span class="hint">贴在播放器外侧，可拖动</span>
+    </div>
+    <div class="cfgrow">
+      <label>进度悬浮窗</label>
+      <input type="checkbox" id="floatWidget" style="width:auto">
+      <span class="hint">速度/单文件/总进度自动轮转</span>
+    </div>
+    <div class="row"><button id="btnResetPos" style="flex:1">还原两个组件的位置</button></div>
   </div>
 
   <details>

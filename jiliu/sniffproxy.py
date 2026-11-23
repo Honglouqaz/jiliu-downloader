@@ -54,17 +54,26 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(400, "只接受代理请求（绝对 URL）")
             return
         try:
-            req = urllib.request.Request(url, headers={
+            # 透传浏览器的关键请求头：
+            #  · Range —— 不传的话播放器拖不动进度，服务端永远回 200 全量
+            #  · Cookie/Referer —— 防盗链/登录态媒体，缺一个就 403
+            # 这是本机代理，转发的是用户自己浏览器的请求，不做登录态中转
+            # 指的是不把 cookie 存下来给别的站点用。
+            fwd = {
                 "User-Agent": self.headers.get("User-Agent") or "Mozilla/5.0",
                 "Accept": self.headers.get("Accept") or "*/*",
-            })
-            # 不跟着别人的 Cookie 走：代理只搬字节，不做登录态中转
+            }
+            for k in ("Range", "Cookie", "Referer", "Origin", "Accept-Language"):
+                v = self.headers.get(k)
+                if v:
+                    fwd[k] = v
+            req = urllib.request.Request(url, headers=fwd)
             op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             with op.open(req, timeout=60) as r:
                 ctype = r.headers.get("Content-Type") or ""
                 length = int(r.headers.get("Content-Length") or 0)
                 if _is_media(url, ctype, length):
-                    _record(url, ctype, length)
+                    _record(url, ctype, length, fwd)
                 self.send_response(r.status)
                 for k, v in r.headers.items():
                     if k.lower() in ("transfer-encoding", "connection", "content-encoding"):
@@ -125,7 +134,8 @@ class _Handler(BaseHTTPRequestHandler):
                 pass
 
 
-def _record(url: str, ctype: str, size: int) -> None:
+def _record(url: str, ctype: str, size: int,
+            headers: Optional[Dict[str, str]] = None) -> None:
     try:
         from . import capture_rules
         ok, reason = capture_rules.should_capture(url, _Handler.cfg, size=size or None,
@@ -138,6 +148,10 @@ def _record(url: str, ctype: str, size: int) -> None:
         if any(x.get("url") == url for x in _recent[-30:]):
             return
         _recent.append({"url": url, "type": ctype or "", "size": int(size or 0),
+                        # 媒体地址多半防盗链，下游建任务时要带上这些头，
+                        # 否则「嗅探到了但下不了」。
+                        "headers": {k: v for k, v in (headers or {}).items()
+                                    if k in ("User-Agent", "Referer", "Origin", "Cookie")},
                         "at": time.time()})
         del _recent[:-100]
 

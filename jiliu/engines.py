@@ -29,6 +29,7 @@
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from . import backends as _backends
@@ -63,7 +64,7 @@ CATALOG: List[Dict[str, Any]] = [
         "binary": "aria2c",
         "tagline": "多源 · 支持 BT / 磁力 / ed2k",
         "detail": "P2P 与多源下载的唯一选择（磁力、种子、ed2k 必须用它）。"
-                  "也能下普通 HTTP，但要自己装 aria2c，或已有 Motrix 之类的 RPC 端点。",
+                  "也能下普通 HTTP：本版已随包附带 aria2c，装上就能用，无需另装。",
         "install": {
             "https": "https://github.com/aria2/aria2/releases/latest",
             "page": "https://github.com/aria2/aria2/releases",
@@ -163,9 +164,17 @@ def _by_key(key: str) -> Optional[Dict[str, Any]]:
 
 
 def status(cfg: Dict[str, Any], *, refresh: bool = False) -> Dict[str, Any]:
-    """每个引擎现在能不能用。"""
-    tl = _tools.probe_all(cfg, refresh=refresh)
-    be = _backends.describe(cfg, refresh=refresh)
+    """每个引擎现在能不能用。
+
+    两条探测并行跑：外部工具要 spawn 一堆进程问版本，aria2 那边要连
+    RPC 且带 1.5 秒超时。它们之间没有依赖，串行等于把两个等待相加 ——
+    冷启动时这就是首屏白等的两秒。
+    """
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_tl = ex.submit(_tools.probe_all, cfg, refresh=refresh)
+        f_be = ex.submit(_backends.describe, cfg, refresh=refresh)
+        tl = f_tl.result()
+        be = f_be.result()
     out: Dict[str, Any] = {}
 
     for e in CATALOG:
@@ -242,10 +251,17 @@ def install_info(key: str, *, platform: Optional[str] = None) -> Dict[str, Any]:
 def describe(cfg: Dict[str, Any], *, refresh: bool = False) -> Dict[str, Any]:
     """给界面用的完整引擎表（元数据 + 可用性）。"""
     st = status(cfg, refresh=refresh)
+    # 哪些能由程序自己下回来（引擎页据此决定显示「下载安装」还是「需手动安装」）。
+    # 局部导入：fetch_tools 反过来要用 tools，放在模块顶部容易踩加载顺序。
+    try:
+        from . import fetch_tools as _fetch
+        fetchable = set(_fetch.SOURCES)
+    except Exception:
+        fetchable = set()
     rows = []
     for e in CATALOG:
         s = st.get(e["key"], {})
-        rows.append({**e, **s})
+        rows.append({**e, **s, "fetchable": e["key"] in fetchable})
     http_avail = [k for k in (cfg.get("engine_order") or VALID_HTTP)
                   if k in VALID_HTTP and st.get(k, {}).get("available")]
     return {
@@ -255,6 +271,36 @@ def describe(cfg: Dict[str, Any], *, refresh: bool = False) -> Dict[str, Any]:
         "effective_http": recommend_http(cfg, st=st),
         "video_ready": bool(st.get("yt-dlp", {}).get("available")),
         "mux_ready": bool(st.get("ffmpeg", {}).get("available")),
+    }
+
+
+def placeholder(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """探测还没回来时给界面的空壳。
+
+    结构必须和 describe() 逐字段一致 —— 前端按同一套字段渲染，少一个键
+    就是一处 undefined。多出来的 `pending` 是给界面看的：显示「正在探测」
+    而不是「未安装」，这两句话对用户的意思完全不同。
+
+    唯一可以现在就确定的是 native（内置，永远可用）。
+    """
+    order = [k for k in (cfg.get("engine_order") or VALID_HTTP)
+             if k in VALID_HTTP]
+    rows = []
+    for e in CATALOG:
+        if e.get("always"):
+            rows.append({**e, "available": True, "path": "", "version": "内置",
+                         "note": "", "fetchable": False, "pending": False})
+        else:
+            rows.append({**e, "available": False, "path": "", "version": "",
+                         "note": "", "fetchable": False, "pending": True})
+    return {
+        "engines": rows,
+        "http_available": [k for k in order if k == "native"],
+        "order": order,
+        "effective_http": "native",
+        "video_ready": False,
+        "mux_ready": False,
+        "probing": True,
     }
 
 
