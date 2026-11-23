@@ -7,7 +7,7 @@ dist/
 bin/
 
 # 内部审计 / 排期文档，不对外
-优化方案-*.html
+优化方案*.html
 _audit/
 
 # 打包用的第三方依赖（PyInstaller 本体、内置的 yt-dlp 源码）。
