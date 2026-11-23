@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from . import __version__, config as _config, proxy
 
 # 官方仓库。cfg["update_repo"] 可以覆盖（fork 之后自更新用）
-DEFAULT_REPO = "sk2234533382/jiliu"
+DEFAULT_REPO = "Honglouqaz/jiliu-downloader"
 # 允许从哪些 host 下载资产
 _ALLOWED_HOSTS = ("github.com", "objects.githubusercontent.com",
                  "release-assets.githubusercontent.com",

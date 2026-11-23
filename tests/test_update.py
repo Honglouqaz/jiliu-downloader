@@ -118,7 +118,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 "tag_name": "v9.9.9",
                 "name": "汲流 9.9.9",
                 "body": "测试版本说明",
-                "html_url": "https://github.com/sk2234533382/jiliu/releases/tag/v9.9.9",
+                "html_url": "https://github.com/Honglouqaz/jiliu-downloader/releases/tag/v9.9.9",
                 "published_at": "2026-10-20T00:00:00Z",
                 "prerelease": False,
                 "assets": [

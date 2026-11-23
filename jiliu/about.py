@@ -44,7 +44,7 @@ LICENSES: Dict[str, Dict[str, str]] = {
 }
 
 SUPPORT = "GitHub Issues"
-SUPPORT_URL = "https://github.com/jiliu-downloader/jiliu-downloader/issues"
+SUPPORT_URL = "https://github.com/Honglouqaz/jiliu-downloader/issues"
 
 
 def components() -> List[Dict[str, str]]:
