@@ -82,15 +82,22 @@ def main() -> int:
     ap.add_argument("--draft", action="store_true")
     ap.add_argument("--prerelease", action="store_true")
     ap.add_argument("--force", action="store_true", help="同名资产已存在时删掉重传")
+    ap.add_argument("--create-repo", action="store_true", help="仓库不存在时创建")
+    ap.add_argument("--private", action="store_true", help="配合 --create-repo")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
+    root = pathlib.Path(__file__).resolve().parent.parent
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     if not token:
-        print("缺少 GH_TOKEN 环境变量", file=sys.stderr)
+        # 也接受项目根目录下的 .gh_token（已在 .gitignore 里，不会误提交）
+        f = root / ".gh_token"
+        if f.exists():
+            token = f.read_text(encoding="utf-8").strip()
+    if not token:
+        print("缺少 GH_TOKEN（环境变量或项目根目录 .gh_token）", file=sys.stderr)
         return 2
 
-    root = pathlib.Path(__file__).resolve().parent.parent
     dist = root / "dist"
     ver = args.version
     owner, _, repo = args.repo.partition("/")
@@ -124,8 +131,19 @@ def main() -> int:
     print(f"token 身份：{me.get('login')}")
 
     code, info = call("GET", f"{API}/repos/{owner}/{repo}", token)
+    if code == 404 and args.create_repo:
+        print(f"仓库不存在，创建 {owner}/{repo}")
+        code, info = call("POST", f"{API}/user/repos", token, {
+            "name": repo, "private": args.private,
+            "description": "汲流 Jiliu — 多线程下载器 / multi-threaded downloader",
+        })
+        if code not in (200, 201):
+            print(f"创建仓库失败 {code}: {info.get('message')}", file=sys.stderr)
+            return 3
     if code != 200:
         print(f"仓库不可访问：{code} {info.get('message')}", file=sys.stderr)
+        print("  若是私有仓库，token 需要有该仓库的访问权；"
+              "仓库确实不存在可加 --create-repo", file=sys.stderr)
         return 3
     perms = info.get("permissions") or {}
     print(f"仓库：{info.get('full_name')}  私有={info.get('private')}  "

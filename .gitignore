@@ -39,3 +39,6 @@ venv/
 *.swp
 Thumbs.db
 desktop.ini
+
+# 本地 GitHub token（发版脚本用，不入库）
+.gh_token
